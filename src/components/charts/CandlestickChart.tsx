@@ -30,7 +30,6 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#222222' },
       timeScale: { borderColor: '#222222', timeVisible: true, secondsVisible: false },
-      watermark: { visible: false },
       height,
     })
 
