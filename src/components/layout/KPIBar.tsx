@@ -72,6 +72,9 @@ export function KPIBar({ dataType, metrics, currentPrice, priceChange }: Props) 
         <KPICard label="가중 수익률" value={formatReturn(m.totalReturn)} colorType="auto" />
         <KPICard label="보유 종목" value={String(m.assetCount)} unit="개" />
         <KPICard label="최대 비중" value={`${m.topConcentration.toFixed(1)}%`} />
+        {m.volatility != null && (
+          <KPICard label="수익률 분산" value={`${fmtNum(m.volatility)}%`} />
+        )}
         <KPICard label="최고 성과" value={m.topAsset} colorType="positive" />
         <KPICard label="최저 성과" value={m.worstAsset} colorType="negative" />
       </div>

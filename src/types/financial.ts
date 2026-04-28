@@ -94,8 +94,8 @@ export interface PortfolioMetrics {
   totalReturn: number
   sharpeRatio: number | null
   sortinoRatio: number | null
-  mdd: number
-  volatility: number
+  mdd: number | null        // 시계열 없으면 null
+  volatility: number | null // 수익률 분산 (횡단면 std)
   assetCount: number
   topAsset: string
   worstAsset: string

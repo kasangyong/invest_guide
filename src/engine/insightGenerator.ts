@@ -180,6 +180,7 @@ export function generateRuleBasedInsights(
     if (metrics.worstAsset) {
       insights.push(`✅ 참고: 최저 성과 종목(${metrics.worstAsset})의 비중 재검토를 고려해볼 수 있습니다. 해당 종목의 손실이 포트폴리오 전체 성과를 끌어내리고 있는지 기여도 분석이 필요합니다. (과거 데이터 기반 분석으로 미래 성과를 보장하지 않습니다)`)
     }
+    return insights.slice(0, 5)
 
   } else if (dataType === 'RETURNS') {
     if (metrics.totalReturn != null) {
@@ -210,6 +211,7 @@ export function generateRuleBasedInsights(
         : ' 비교적 안정적인 낙폭 관리가 이루어지고 있습니다.'
       insights.push(`⚠️ 하방: 최대 낙폭 ${metrics.mdd.toFixed(1)}%(${mddGrade(mddAbs)}).${mddComment}`)
     }
+    return insights.slice(0, 5)
 
   } else {
     insights.push('📊 분석: 데이터가 로드되었습니다. 지원되는 데이터 형식으로 업로드하면 더 상세한 분석을 확인하실 수 있습니다.')

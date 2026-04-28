@@ -300,25 +300,34 @@ export function calculatePortfolioMetrics(rows: PortfolioRow[]): PortfolioMetric
   }
 
   const returnRates = rows.map((r) => r.returnRate ?? 0)
-  const weights = rows.map((r) => r.weight / 100)
+
+  // 가중치 단위 자동 감지: 합이 1.5 이하면 이미 0-1 정규화, 아니면 0-100으로 간주
+  const rawWeights = rows.map((r) => r.weight)
+  const weightSum = rawWeights.reduce((a, b) => a + b, 0)
+  const weights = weightSum <= 1.5 ? rawWeights : rawWeights.map((w) => w / 100)
+
   const weightedReturn = returnRates.reduce((acc, r, i) => acc + r * (weights[i] ?? 0), 0)
+
+  // 수익률 횡단면 분산 (시계열 없으므로 개별 종목 returnRate의 std)
+  const validReturns = rows.filter((r) => r.returnRate != null).map((r) => r.returnRate!)
+  const returnVolatility = validReturns.length >= 2 ? stddev(validReturns) : null
 
   const sorted = [...rows].sort((a, b) => (b.returnRate ?? 0) - (a.returnRate ?? 0))
   const topAsset = sorted[0]?.ticker ?? '-'
   const worstAsset = sorted[sorted.length - 1]?.ticker ?? '-'
 
-  const maxWeight = Math.max(...rows.map((r) => r.weight))
+  const maxWeight = Math.max(...rawWeights)
 
   return {
     totalReturn: weightedReturn,
     sharpeRatio: null,
     sortinoRatio: null,
-    mdd: 0,
-    volatility: 0,
+    mdd: null,
+    volatility: returnVolatility,
     assetCount: rows.length,
     topAsset,
     worstAsset,
-    topConcentration: maxWeight,
+    topConcentration: weightSum <= 1.5 ? maxWeight * 100 : maxWeight,
   }
 }
 
