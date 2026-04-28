@@ -108,7 +108,10 @@ export function DashboardShell({ data, onReset }: ShellProps) {
     <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
       <header className="flex items-center justify-between px-6 py-4 border-b border-[#1e1e1e] bg-[#0a0a0a] sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <span className="text-sm font-semibold tracking-widest uppercase text-white">InvestDash</span>
+          <button
+            onClick={onReset}
+            className="text-sm font-semibold tracking-widest uppercase text-white hover:text-[#aaaaaa] transition-colors cursor-pointer"
+          >InvestDash</button>
           <span className="text-xs text-[#555555]">{DATA_TYPE_LABEL[schema.dataType] ?? schema.dataType}</span>
           <span className="text-xs text-[#444444]">{schema.rowCount.toLocaleString()}행</span>
         </div>
