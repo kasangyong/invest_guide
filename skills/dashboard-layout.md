@@ -1,4 +1,4 @@
-# Dashboard Layout Rules v1.0
+# Dashboard Layout Rules
 
 ## 전체 레이아웃 원칙
 1. F-Pattern: 최상단 KPI 요약 → 주요 차트 → 보조 분석 → 상세 테이블

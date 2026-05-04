@@ -19,28 +19,27 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0a0a' },
-        textColor: '#555555',
+        background: { type: ColorType.Solid, color: '#FAFAF9' },
+        textColor: '#5C5C57',
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: '#1a1a1a' },
-        horzLines: { color: '#1a1a1a' },
+        vertLines: { color: '#EBE7DC' },
+        horzLines: { color: '#EBE7DC' },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#222222' },
-      timeScale: { borderColor: '#222222', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: '#DDD9CE' },
+      timeScale: { borderColor: '#DDD9CE', timeVisible: true, secondsVisible: false },
       height,
     })
 
-    // 캔들스틱 (상승=teal, 하락=red)
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderUpColor: '#26a69a',
-      borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350',
+      upColor: '#0A7A45',
+      downColor: '#C42B35',
+      borderUpColor: '#0A7A45',
+      borderDownColor: '#C42B35',
+      wickUpColor: '#0A7A45',
+      wickDownColor: '#C42B35',
     })
     type TimeStr = `${number}-${number}-${number}`
     candleSeries.setData(data.map((d) => ({
@@ -48,21 +47,19 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
       open: d.open, high: d.high, low: d.low, close: d.close,
     })))
 
-    // 거래량 히스토그램
     const volSeries = chart.addSeries(HistogramSeries, {
-      color: '#222222',
+      color: '#DDD9CE',
       priceScaleId: 'volume',
     })
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
     volSeries.setData(data.map((d) => ({
       time: d.date as TimeStr,
       value: d.volume,
-      color: d.close >= d.open ? '#1a3a38' : '#3a1a1a',
+      color: d.close >= d.open ? 'rgba(10,122,69,0.2)' : 'rgba(196,43,53,0.15)',
     })))
 
-    // MA20 (amber)
     const ma20S = chart.addSeries(LineSeries, {
-      color: '#f59e0b',
+      color: '#B07C00',
       lineWidth: 1,
       title: '',
       priceLineVisible: false,
@@ -73,9 +70,8 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
         .filter((p): p is { time: TimeStr; value: number } => p.value != null)
     )
 
-    // MA50 (indigo)
     const ma50S = chart.addSeries(LineSeries, {
-      color: '#818cf8',
+      color: '#4F46E5',
       lineWidth: 1,
       title: '',
       priceLineVisible: false,
@@ -86,10 +82,9 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
         .filter((p): p is { time: TimeStr; value: number } => p.value != null)
     )
 
-    // 볼린저 밴드 (blue-400, dashed)
     if (metrics.bollingerSeries.length > 0) {
       const bbUpper = chart.addSeries(LineSeries, {
-        color: 'rgba(96,165,250,0.7)',
+        color: 'rgba(37,99,235,0.65)',
         lineWidth: 1,
         lineStyle: 2,
         title: '',
@@ -106,7 +101,7 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
       )
 
       const bbMiddle = chart.addSeries(LineSeries, {
-        color: 'rgba(96,165,250,0.35)',
+        color: 'rgba(37,99,235,0.3)',
         lineWidth: 1,
         lineStyle: 1,
         title: '',
@@ -123,7 +118,7 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
       )
 
       const bbLower = chart.addSeries(LineSeries, {
-        color: 'rgba(96,165,250,0.7)',
+        color: 'rgba(37,99,235,0.65)',
         lineWidth: 1,
         lineStyle: 2,
         title: '',
@@ -154,20 +149,20 @@ export function CandlestickChart({ data, metrics, height = 360 }: Props) {
   const isUp = change >= 0
 
   return (
-    <div className="bg-[#0a0a0a] border border-[#222222] overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1e1e1e]">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[#888888] uppercase tracking-wider">캔들스틱</span>
-          <div className="flex items-center gap-3 text-[10px]">
-            <span style={{ color: '#f59e0b' }}>&mdash; MA20</span>
-            <span style={{ color: '#818cf8' }}>&mdash; MA50</span>
-            <span style={{ color: 'rgba(96,165,250,0.9)' }}>&ndash;&ndash; BB</span>
+    <div style={{ background: '#FAFAF9', border: '1px solid #DDD9CE', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid #DDD9CE' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '0.75rem', color: '#5C5C57', textTransform: 'uppercase', letterSpacing: '0.05em' }}>캔들스틱</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.625rem' }}>
+            <span style={{ color: '#B07C00' }}>&mdash; MA20</span>
+            <span style={{ color: '#4F46E5' }}>&mdash; MA50</span>
+            <span style={{ color: 'rgba(37,99,235,0.8)' }}>&ndash;&ndash; BB</span>
           </div>
         </div>
         {last && (
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-white font-medium">{last.close.toLocaleString()}</span>
-            <span className={`text-xs font-medium ${isUp ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.875rem' }}>
+            <span style={{ color: '#1A1A1A', fontWeight: 500 }}>{last.close.toLocaleString()}</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: isUp ? '#0A7A45' : '#C42B35' }}>
               {isUp ? '+' : ''}{change.toFixed(2)}%
             </span>
           </div>

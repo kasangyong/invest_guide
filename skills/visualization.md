@@ -1,4 +1,4 @@
-# Visualization Selection Rules v1.0
+# Visualization Selection Rules
 
 ## 핵심 원칙
 1. 단일 차트 = 단일 인사이트 (하나의 차트가 하나의 메시지만 전달)

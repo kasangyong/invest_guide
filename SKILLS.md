@@ -1,4 +1,4 @@
-# InvestDash SKILLS.md v1.0
+# InvestDash SKILLS.md
 
 > 이 문서는 InvestDash 시스템의 동작을 기술하는 사양서입니다.
 > 실제 동작은 각 섹션에 명시된 대응 모듈의 코드에 의해 결정됩니다.

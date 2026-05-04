@@ -55,17 +55,11 @@ export function DashboardShell({ data, onReset }: ShellProps) {
     if (stockMetrics) return {
       dataType: 'STOCK_OHLCV',
       metrics: {
-        totalReturn: stockMetrics.totalReturn,
-        cagr: stockMetrics.cagr,
-        sharpeRatio: stockMetrics.sharpeRatio,
-        sortinoRatio: stockMetrics.sortinoRatio,
-        mdd: stockMetrics.mdd,
-        volatility: stockMetrics.volatility,
-        ma20: stockMetrics.ma20,
-        ma50: stockMetrics.ma50,
-        rsi14: stockMetrics.rsi14,
-        bollingerUpper: stockMetrics.bollingerUpper,
-        bollingerLower: stockMetrics.bollingerLower,
+        totalReturn: stockMetrics.totalReturn, cagr: stockMetrics.cagr,
+        sharpeRatio: stockMetrics.sharpeRatio, sortinoRatio: stockMetrics.sortinoRatio,
+        mdd: stockMetrics.mdd, volatility: stockMetrics.volatility,
+        ma20: stockMetrics.ma20, ma50: stockMetrics.ma50, rsi14: stockMetrics.rsi14,
+        bollingerUpper: stockMetrics.bollingerUpper, bollingerLower: stockMetrics.bollingerLower,
         bollingerMiddle: stockMetrics.bollingerMiddle,
       },
       summary: `${rawRows.length}개 거래일`,
@@ -73,22 +67,17 @@ export function DashboardShell({ data, onReset }: ShellProps) {
     if (returnsMetrics) return {
       dataType: 'RETURNS',
       metrics: {
-        totalReturn: returnsMetrics.totalReturn,
-        cagr: returnsMetrics.cagr,
-        sharpeRatio: returnsMetrics.sharpeRatio,
-        sortinoRatio: returnsMetrics.sortinoRatio,
-        mdd: returnsMetrics.mdd,
-        volatility: returnsMetrics.volatility,
+        totalReturn: returnsMetrics.totalReturn, cagr: returnsMetrics.cagr,
+        sharpeRatio: returnsMetrics.sharpeRatio, sortinoRatio: returnsMetrics.sortinoRatio,
+        mdd: returnsMetrics.mdd, volatility: returnsMetrics.volatility,
       },
       summary: `${rawRows.length}개 수익률`,
     }
     if (portfolioMetrics) return {
       dataType: 'PORTFOLIO',
       metrics: {
-        totalReturn: portfolioMetrics.totalReturn,
-        sharpeRatio: portfolioMetrics.sharpeRatio,
-        mdd: portfolioMetrics.mdd,
-        topConcentration: portfolioMetrics.topConcentration,
+        totalReturn: portfolioMetrics.totalReturn, sharpeRatio: portfolioMetrics.sharpeRatio,
+        mdd: portfolioMetrics.mdd ?? undefined, topConcentration: portfolioMetrics.topConcentration,
         worstAsset: portfolioMetrics.worstAsset,
       },
       summary: `${portfolioMetrics.assetCount}개 종목`,
@@ -101,23 +90,32 @@ export function DashboardShell({ data, onReset }: ShellProps) {
   const prevRow = stockRows?.[stockRows.length - 2]
   const priceChange = lastRow && prevRow ? ((lastRow.close - prevRow.close) / prevRow.close) * 100 : undefined
   const kpiMetrics = stockMetrics ?? returnsMetrics ?? portfolioMetrics
-
   const stockVolumes = useMemo(() => stockRows?.map((r) => r.volume), [stockRows])
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-[#1e1e1e] bg-[#0a0a0a] sticky top-0 z-10">
-        <div className="flex items-center gap-4">
+    <div className="dashboard" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--c-bg)', color: 'var(--c-fg)' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 var(--s-6)', height: '48px', borderBottom: '1px solid var(--c-line)', background: 'var(--c-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-4)' }}>
           <button
             onClick={onReset}
-            className="text-sm font-semibold tracking-widest uppercase text-white hover:text-[#aaaaaa] transition-colors cursor-pointer"
-          >InvestDash</button>
-          <span className="text-xs text-[#555555]">{DATA_TYPE_LABEL[schema.dataType] ?? schema.dataType}</span>
-          <span className="text-xs text-[#444444]">{schema.rowCount.toLocaleString()}행</span>
+            style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 500, fontSize: '0.8rem', letterSpacing: '0.1em', color: 'var(--c-fg)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, transition: 'opacity 0.15s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.6' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
+          >
+            INVESTDASH
+          </button>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.65rem', color: 'var(--c-fg-muted)' }}>
+            {DATA_TYPE_LABEL[schema.dataType] ?? schema.dataType}
+          </span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.65rem', color: 'var(--c-line)' }}>
+            {schema.rowCount.toLocaleString()}행
+          </span>
         </div>
         <button
           onClick={onReset}
-          className="text-xs text-[#888888] hover:text-white transition-colors px-3 py-1.5 border border-[#222222] hover:border-[#444444] rounded"
+          style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: '0.75rem', color: 'var(--c-fg-muted)', background: 'none', border: '1px solid var(--c-line)', padding: '4px 12px', cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s' }}
+          onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--c-fg-muted)'; el.style.color = 'var(--c-fg)' }}
+          onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--c-line)'; el.style.color = 'var(--c-fg-muted)' }}
         >
           ← 새 파일 업로드
         </button>
@@ -125,7 +123,7 @@ export function DashboardShell({ data, onReset }: ShellProps) {
 
       <KPIBar dataType={schema.dataType} metrics={kpiMetrics} currentPrice={lastRow?.close} priceChange={priceChange} />
 
-      <main className="flex-1 p-4 space-y-3">
+      <main style={{ flex: 1, padding: 'var(--s-4)', display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
         {schema.dataType === 'STOCK_OHLCV' && stockMetrics && stockRows && (
           <StockLayout rows={stockRows} metrics={stockMetrics} insightRequest={insightRequest} volumes={stockVolumes} />
         )}
@@ -217,9 +215,12 @@ function ReturnsLayout({
 function GenericLayout({ insightRequest }: { insightRequest: InsightRequest }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
-      <div className="lg:col-span-3 bg-[#111111] border border-[#222222] p-10 flex flex-col items-center justify-center text-center">
-        <p className="text-white font-medium mb-2">데이터가 로드되었습니다</p>
-        <p className="text-[#555555] text-sm">STOCK_OHLCV, PORTFOLIO, RETURNS 형식을 업로드하면 전문 차트를 볼 수 있습니다.</p>
+      <div
+        className="lg:col-span-3"
+        style={{ background: 'var(--c-bg-muted)', border: '1px solid var(--c-line)', padding: 'var(--s-9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}
+      >
+        <p style={{ fontWeight: 500, color: 'var(--c-fg)', marginBottom: 'var(--s-2)' }}>데이터가 로드되었습니다</p>
+        <p style={{ fontSize: 'var(--t--1)', color: 'var(--c-fg-muted)' }}>STOCK_OHLCV, PORTFOLIO, RETURNS 형식을 업로드하면 전문 차트를 볼 수 있습니다.</p>
       </div>
       <div className="lg:col-span-2">
         <InsightPanel request={insightRequest} />

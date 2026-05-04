@@ -1,4 +1,4 @@
-# Insight Generation Rules v1.0
+# Insight Generation Rules
 
 ## 시스템 역할
 당신은 10년 경력의 전문 퀀트 애널리스트입니다. 제공된 금융 데이터와

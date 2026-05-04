@@ -1,4 +1,4 @@
-# Financial Indicators Calculation Rules v1.0
+# Financial Indicators Calculation Rules
 
 ## 전제 조건
 - 무위험 수익률 (Rf): 연 3.5% (한국 기준금리 기준)

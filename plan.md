@@ -146,7 +146,7 @@ invest-dashboard/
 ### 4.1 `skills/data-schema.md` — 데이터 구조 감지 규칙
 
 ```markdown
-# Data Schema Detection Rules v1.0
+# Data Schema Detection Rules
 
 ## 목적
 업로드된 CSV/JSON 데이터의 컬럼을 분석하여 데이터 타입을 자동 분류한다.
@@ -206,7 +206,7 @@ invest-dashboard/
 ### 4.2 `skills/visualization.md` — 차트 선택 기준
 
 ```markdown
-# Visualization Selection Rules v1.0
+# Visualization Selection Rules
 
 ## 핵심 원칙
 1. 단일 차트 = 단일 인사이트
@@ -253,7 +253,7 @@ SECONDARY: HeatmapChart (섹터별 성과)
 ### 4.3 `skills/indicators.md` — 금융 지표 계산 공식
 
 ```markdown
-# Financial Indicators Calculation Rules v1.0
+# Financial Indicators Calculation Rules
 
 ## 수익률 지표
 
@@ -318,7 +318,7 @@ MA_N = 최근 N개 종가의 산술 평균
 ### 4.4 `skills/insight-generation.md` — 인사이트 생성 규칙
 
 ```markdown
-# Insight Generation Rules v1.0
+# Insight Generation Rules
 
 ## 시스템 역할
 당신은 전문 투자 분석가입니다. 제공된 금융 데이터와 계산된 지표를 기반으로
@@ -363,7 +363,7 @@ MA_N = 최근 N개 종가의 산술 평균
 ### 4.5 `skills/dashboard-layout.md` — 레이아웃 구성 규칙
 
 ```markdown
-# Dashboard Layout Rules v1.0
+# Dashboard Layout Rules
 
 ## 레이아웃 원칙
 1. F-Pattern: 최상단 KPI → 주요 차트 → 보조 분석 → 상세 테이블

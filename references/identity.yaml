@@ -1,0 +1,32 @@
+audience:
+  description: 주식·ETF·암호화폐를 직접 운용하는 개인 투자자. 데이터 리터러시 중간 수준.
+  notes: 설명 텍스트 병기 OK, 과도한 전문 용어 피하기.
+
+mood:
+  words: [절제·신뢰, 정밀·기술적, 세련·프리미엄, 명쾌·접근성]
+  avoid: [귀여움, 과장된 화려함, 유행 색상 그라디언트]
+
+accent_color: "#1B4FCC"   # 네이비 블루 — 금융·신뢰 연상
+surface: "#FAFAF9"
+surface_muted: "#F0EEE8"
+line: "#DDD9CE"
+fg: "#1A1A1A"
+fg_muted: "#5C5C57"
+
+dark:
+  surface: "#10141A"
+  surface_muted: "#181C24"
+  line: "#252B36"
+  fg: "#F0EEE8"
+  fg_muted: "#8C9AAD"
+  accent: "#3B6EE8"
+
+typography:
+  display: "Inter"          # 숫자 정렬에 강함
+  body: "Inter"
+  mono: "JetBrains Mono"   # 틱커·수치 강조
+
+reference_sites:
+  - Bloomberg Terminal (밀도·신뢰)
+  - TradingView (정밀·기술)
+  - Robinhood (접근성·명쾌)

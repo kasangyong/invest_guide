@@ -28,55 +28,45 @@ export function UploadZone({ onFile, accept = '.csv' }: Props) {
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
       onClick={() => inputRef.current?.click()}
-      className="cursor-pointer text-center transition-all"
       style={{
-        border: dragging ? '2px dashed #0a0a0a' : '2px dashed #cccccc',
-        background: dragging ? 'rgba(10,10,10,0.04)' : '#ffffff',
-        padding: '3rem 2rem',
-        transition: 'border-color 0.2s, background 0.2s',
+        border: dragging ? '2px dashed var(--c-accent)' : '2px dashed var(--c-line)',
+        background: dragging ? 'rgba(27,79,204,0.04)' : 'var(--c-bg)',
+        padding: 'var(--s-8) var(--s-6)',
+        textAlign: 'center',
+        cursor: 'pointer',
+        transition: 'border-color 0.15s, background 0.15s',
       }}
     >
-      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleChange} />
+      <input ref={inputRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleChange} />
 
-      {/* 업로드 아이콘 */}
-      <div style={{ marginBottom: '1.25rem', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ marginBottom: 'var(--s-5)', display: 'flex', justifyContent: 'center' }}>
         <svg
-          width="40" height="40" viewBox="0 0 40 40" fill="none"
-          style={{ opacity: dragging ? 1 : 0.4, transition: 'opacity 0.2s' }}
+          width="36" height="36" viewBox="0 0 36 36" fill="none"
+          style={{ opacity: dragging ? 1 : 0.35, transition: 'opacity 0.15s' }}
         >
-          <circle cx="20" cy="20" r="19" stroke="#0a0a0a" strokeWidth="1.5"/>
-          <path d="M20 27V14M14 20l6-7 6 7" stroke="#0a0a0a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="0.5" y="0.5" width="35" height="35" stroke={dragging ? 'var(--c-accent)' : 'var(--c-fg)'} strokeWidth="1"/>
+          <path d="M18 24V13M13 18l5-6 5 6" stroke={dragging ? 'var(--c-accent)' : 'var(--c-fg)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
 
-      {/* 메인 문구 */}
-      <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: '1.05rem', color: '#0a0a0a', marginBottom: '0.5rem' }}>
-        {dragging ? '여기에 놓으세요' : 'CSV 파일을 여기에 드래그하세요'}
+      <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: 'var(--t-1)', color: dragging ? 'var(--c-accent)' : 'var(--c-fg)', marginBottom: 'var(--s-2)', transition: 'color 0.15s' }}>
+        {dragging ? '여기에 놓으세요' : 'CSV 파일을 드래그하세요'}
       </p>
-      <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 400, fontSize: '0.875rem', color: '#888888', marginBottom: '1.5rem' }}>
+      <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: 'var(--t-0)', color: 'var(--c-fg-muted)', marginBottom: 'var(--s-5)' }}>
         또는 클릭해서 파일 선택
       </p>
 
-      {/* 구분선 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
-        <div style={{ flex: 1, height: '1px', background: '#e8e8e8' }} />
-        <span style={{ fontFamily: "'Inter', monospace", fontSize: '0.7rem', color: '#cccccc', letterSpacing: '0.1em' }}>지원 형식</span>
-        <div style={{ flex: 1, height: '1px', background: '#e8e8e8' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-4)', marginBottom: 'var(--s-4)' }}>
+        <div style={{ flex: 1, height: '1px', background: 'var(--c-line)' }} />
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--t--1)', color: 'var(--c-fg-muted)', letterSpacing: '0.08em' }}>지원 형식</span>
+        <div style={{ flex: 1, height: '1px', background: 'var(--c-line)' }} />
       </div>
 
-      {/* 지원 타입 태그 */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--s-3)', flexWrap: 'wrap' }}>
         {['주가 OHLCV', '포트폴리오', '수익률 시계열'].map((tag) => (
           <span
             key={tag}
-            style={{
-              fontFamily: "'Noto Sans KR', sans-serif",
-              fontSize: '0.75rem',
-              color: '#666666',
-              border: '1px solid #e0e0e0',
-              padding: '0.25rem 0.75rem',
-              background: '#fafafa',
-            }}
+            style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: 'var(--t--1)', color: 'var(--c-fg-muted)', border: '1px solid var(--c-line)', padding: '3px 12px' }}
           >
             {tag}
           </span>

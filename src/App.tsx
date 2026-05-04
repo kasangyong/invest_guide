@@ -1,21 +1,20 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer } from 'recharts'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts'
 import Papa from 'papaparse'
 import { DashboardShell } from './components/layout/DashboardShell'
 import { UploadZone } from './components/widgets/UploadZone'
-import {
-  detectSchema,
-  toOHLCVRows,
-  toPortfolioRows,
-  toReturnsRows,
-} from './engine/schemaDetector'
+import { detectSchema, toOHLCVRows, toPortfolioRows, toReturnsRows } from './engine/schemaDetector'
 import { DEMO_STOCK_DATA, DEMO_STOCK_SCHEMA } from './data/demoStock'
 import { DEMO_PORTFOLIO_DATA, DEMO_PORTFOLIO_SCHEMA } from './data/demoPortfolio'
 import { DEMO_RETURNS_DATA, DEMO_RETURNS_SCHEMA } from './data/demoReturns'
-import type {
-  AppState, DetectedSchema, OHLCVRow, PortfolioRow, ReturnsRow,
-} from './types/financial'
+import { calculateAllMetrics } from './engine/financialEngine'
+import { CandlestickChart } from './components/charts/CandlestickChart'
+import { RSIChart } from './components/charts/RSIChart'
+import type { AppState, DetectedSchema, OHLCVRow, PortfolioRow, ReturnsRow } from './types/financial'
+import CountUp from './components/effects/CountUp'
+import SpotlightCard from './components/effects/SpotlightCard'
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 type DashboardPayload =
   | { schema: DetectedSchema & { dataType: 'STOCK_OHLCV' }; rows: OHLCVRow[]; rawRows: Record<string, string | number | null>[] }
   | { schema: DetectedSchema & { dataType: 'PORTFOLIO' }; rows: PortfolioRow[]; rawRows: Record<string, string | number | null>[] }
@@ -24,29 +23,720 @@ type DashboardPayload =
 
 function buildPayload(schema: DetectedSchema, rawRows: Record<string, string | number | null>[]): DashboardPayload {
   if (schema.dataType === 'STOCK_OHLCV') return { schema: schema as DetectedSchema & { dataType: 'STOCK_OHLCV' }, rows: toOHLCVRows(rawRows, schema), rawRows }
-  if (schema.dataType === 'PORTFOLIO') return { schema: schema as DetectedSchema & { dataType: 'PORTFOLIO' }, rows: toPortfolioRows(rawRows, schema), rawRows }
-  if (schema.dataType === 'RETURNS') return { schema: schema as DetectedSchema & { dataType: 'RETURNS' }, rows: toReturnsRows(rawRows, schema), rawRows }
+  if (schema.dataType === 'PORTFOLIO')   return { schema: schema as DetectedSchema & { dataType: 'PORTFOLIO' }, rows: toPortfolioRows(rawRows, schema), rawRows }
+  if (schema.dataType === 'RETURNS')     return { schema: schema as DetectedSchema & { dataType: 'RETURNS' }, rows: toReturnsRows(rawRows, schema), rawRows }
   return { schema: schema as DetectedSchema & { dataType: 'GENERIC' | 'FINANCIAL_STATEMENT' }, rows: rawRows, rawRows }
 }
 
+// ── Design tokens — aligned to references/identity.yaml ──────────────────────
+const P = {
+  bg:        '#FAFAF9',   // identity.yaml surface
+  surface:   '#F0EEE8',   // identity.yaml surface_muted
+  surfaceHi: '#E7E3D8',
+  border:    '#DDD9CE',   // identity.yaml line
+  borderHi:  '#C9C4B8',
+  fg:        '#1A1A1A',   // identity.yaml fg
+  fgSub:     '#5C5C57',   // identity.yaml fg_muted
+  fgDim:     '#EBE7DC',
+  // Single accent — navy blue per identity.yaml
+  accent:    '#1B4FCC',   // identity.yaml accent_color
+  accentLo:  'rgba(27,79,204,0.08)',
+  // Metric highlights only — not a second accent
+  gold:      '#9A6F1A',
+  pos:       '#0A7A45',
+  neg:       '#C42B35',
+}
+const SANS = "'Inter', 'Noto Sans KR', system-ui, sans-serif"
+const MONO = "'JetBrains Mono', monospace"
+
+// ── Pre-computed ──────────────────────────────────────────────────────────────
+const DEMO_METRICS = calculateAllMetrics(DEMO_STOCK_DATA)
+const MINI_DATA    = DEMO_STOCK_DATA.slice(-120).map((r, i) => ({ i, p: r.close }))
+const SHOW = {
+  sharpe:  Math.abs(DEMO_METRICS.sharpeRatio ?? 1.24).toFixed(2),
+  mdd:     Math.abs(DEMO_METRICS.mdd ?? 12.4).toFixed(1),
+  vol:     (DEMO_METRICS.volatility ?? 18.3).toFixed(1),
+  rsi:     (DEMO_METRICS.rsi14 ?? 58).toFixed(0),
+  sortino: Math.abs(DEMO_METRICS.sortinoRatio ?? 1.87).toFixed(2),
+  latest:  DEMO_STOCK_DATA[DEMO_STOCK_DATA.length - 1]?.close.toLocaleString('ko-KR') ?? '–',
+}
+
+// ── Ticker ────────────────────────────────────────────────────────────────────
+const TICKERS = [
+  { n: 'KOSPI',   v: '2,847.34', d: '+1.24%', up: true  },
+  { n: 'USD/KRW', v: '1,342.50', d: '−0.08%', up: false },
+  { n: 'NASDAQ',  v: '18,234',   d: '+0.83%', up: true  },
+  { n: 'S&P 500', v: '5,892',    d: '+0.61%', up: true  },
+  { n: 'GOLD',    v: '2,044.30', d: '−0.22%', up: false },
+  { n: 'WTI',     v: '78.14',    d: '+0.44%', up: true  },
+  { n: 'BTC',     v: '67,420',   d: '+2.14%', up: true  },
+  { n: 'ETH',     v: '3,521',    d: '+1.58%', up: true  },
+]
+
+function TickerBar() {
+  const items = [...TICKERS, ...TICKERS]
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+      height: '28px', background: 'rgba(250,250,249,0.98)',
+      borderBottom: `1px solid ${P.border}`,
+      display: 'flex', overflow: 'hidden', alignItems: 'center',
+    }}>
+      <div className="ticker-track" style={{ display: 'flex', flexShrink: 0 }}>
+        {items.map((t, i) => (
+          <div key={i} style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '0 22px', borderRight: `1px solid ${P.border}`,
+            height: '28px', flexShrink: 0,
+          }}>
+            <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub, letterSpacing: '0.06em' }}>{t.n}</span>
+            <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: P.fg, fontWeight: 500 }}>{t.v}</span>
+            <span style={{ fontFamily: MONO, fontSize: '0.56rem', color: t.up ? P.pos : P.neg, fontWeight: 600 }}>{t.d}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Navbar ────────────────────────────────────────────────────────────────────
+function Navbar({ onUpload }: { onUpload: () => void }) {
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 60)
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
+  }, [])
+  return (
+    <nav style={{
+      position: 'fixed', top: '28px', left: 0, right: 0, zIndex: 99,
+      height: '56px', display: 'flex', alignItems: 'center',
+      background: scrolled ? 'rgba(250,250,249,0.96)' : 'transparent',
+      backdropFilter: scrolled ? 'blur(20px)' : 'none',
+      borderBottom: `1px solid ${scrolled ? P.border : 'transparent'}`,
+      transition: 'all 0.3s',
+    }}>
+      <div style={{ width: '100%', maxWidth: '1360px', margin: '0 auto', padding: '0 56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '28px', height: '28px', background: P.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.6rem', fontFamily: MONO, fontWeight: 700, color: '#fff',
+          }}>ID</div>
+          <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: '0.76rem', letterSpacing: '0.18em', color: P.fg }}>INVESTDASH</span>
+        </div>
+        <div style={{ display: 'flex', gap: '36px', alignItems: 'center' }}>
+          {[['차트', 'live-charts'], ['사용 방법', 'how'], ['데모', 'demo']].map(([label, id]) => (
+            <button key={id}
+              onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })}
+              style={{ fontFamily: SANS, fontSize: '0.82rem', fontWeight: 400, color: P.fgSub, background: 'none', border: 'none', cursor: 'pointer', padding: 0, transition: 'color 0.2s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = P.fg }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = P.fgSub }}
+            >{label}</button>
+          ))}
+          <button onClick={onUpload} style={{
+            fontFamily: SANS, fontSize: '0.82rem', fontWeight: 600,
+            color: '#fff', background: P.accent,
+            border: 'none', padding: '9px 22px',
+            cursor: 'pointer', transition: 'background 0.2s',
+            borderRadius: '6px',
+          }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = P.accent }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = P.accent }}
+          >CSV 업로드</button>
+        </div>
+      </div>
+    </nav>
+  )
+}
+
+// ── Dashboard Preview Card (hero right) ───────────────────────────────────────
+function DashboardPreview() {
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const x = (e.clientX - r.left - r.width  / 2) / (r.width  / 2)
+    const y = (e.clientY - r.top  - r.height / 2) / (r.height / 2)
+    el.style.transform = `perspective(1000px) rotateY(${x * 7}deg) rotateX(${-y * 5}deg)`
+  }
+  const onLeave = () => {
+    if (cardRef.current) cardRef.current.style.transform = 'perspective(1000px) rotateY(0) rotateX(0)'
+  }
+
+  return (
+    <div
+      ref={cardRef}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+      style={{
+        background: 'rgba(8,11,24,0.85)',
+        backdropFilter: 'blur(20px)',
+        border: `1px solid ${P.borderHi}`,
+        borderRadius: '8px',
+        overflow: 'hidden',
+        boxShadow: `inset 0 0 0 1px ${P.border}`,
+        transition: 'transform 0.15s ease-out',
+        transformStyle: 'preserve-3d',
+      }}
+    >
+      {/* Purple top accent line */}
+      <div style={{ height: '1px', background: P.accent, opacity: 0.6 }} />
+
+      {/* Browser chrome */}
+      <div style={{
+        padding: '10px 16px', borderBottom: `1px solid ${P.border}`,
+        display: 'flex', alignItems: 'center', gap: '10px',
+        background: 'rgba(13,17,40,0.8)',
+      }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {['#FF5F57', '#FFBD2E', '#28C840'].map(c => (
+            <div key={c} style={{ width: '10px', height: '10px', borderRadius: '50%', background: c, opacity: 0.8 }} />
+          ))}
+        </div>
+        <div style={{
+          flex: 1, height: '22px', background: P.border, borderRadius: '4px',
+          display: 'flex', alignItems: 'center', padding: '0 10px', gap: '6px',
+        }}>
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: P.pos }} />
+          <span style={{ fontFamily: MONO, fontSize: '0.5rem', color: P.fgSub }}>investdash.app/dashboard</span>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div style={{ padding: '20px' }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: '0.46rem', color: P.fgSub, letterSpacing: '0.12em', marginBottom: '4px' }}>LATEST CLOSE PRICE</div>
+            <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: '1.7rem', color: P.fg, lineHeight: 1, letterSpacing: '-0.02em' }}>
+              {SHOW.latest}<span style={{ fontSize: '0.8rem', color: P.fgSub, fontWeight: 400 }}> ₩</span>
+            </div>
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            background: 'rgba(16,212,122,0.1)', border: '1px solid rgba(16,212,122,0.2)',
+            padding: '6px 12px', borderRadius: '4px',
+          }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: P.pos }} />
+            <span style={{ fontFamily: MONO, fontSize: '0.5rem', color: P.pos, fontWeight: 600 }}>분석 완료</span>
+          </div>
+        </div>
+
+        {/* Mini chart */}
+        <div style={{ height: '100px', marginBottom: '16px', borderRadius: '8px', overflow: 'hidden', background: P.fgDim }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={MINI_DATA} margin={{ top: 6, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor={P.accent} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={P.accent} stopOpacity={0}   />
+                </linearGradient>
+              </defs>
+              <YAxis domain={['auto', 'auto']} hide />
+              <Area type="monotone" dataKey="p" stroke={P.accent} strokeWidth={1.5} fill="url(#aGrad)" dot={false} animationDuration={2000} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Metric tiles */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px', marginBottom: '14px' }}>
+          {[
+            { l: 'SHARPE', v: SHOW.sharpe,        c: P.accent },
+            { l: 'MDD',    v: `−${SHOW.mdd}%`,    c: P.neg      },
+            { l: 'RSI',    v: SHOW.rsi,            c: P.pos      },
+            { l: 'VOL',    v: `${SHOW.vol}%`,      c: P.fgSub    },
+          ].map(m => (
+            <div key={m.l} style={{
+              background: P.surfaceHi, border: `1px solid ${P.border}`,
+              borderRadius: '8px', padding: '10px',
+            }}>
+              <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: '0.95rem', color: m.c, lineHeight: 1 }}>{m.v}</div>
+              <div style={{ fontFamily: MONO, fontSize: '0.4rem', color: P.fgSub, letterSpacing: '0.1em', marginTop: '4px' }}>{m.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Status bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: '8px 12px', background: P.fgDim, borderRadius: '6px',
+        }}>
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: P.pos, flexShrink: 0 }} />
+          <span style={{ fontFamily: MONO, fontSize: '0.46rem', color: P.fgSub }}>STOCK_OHLCV · 504 rows · 자동 감지 완료</span>
+          <div style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: '0.44rem', color: P.fgSub }}>삼성전자</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Hero — centered headline + bento product grid ────────────────────────────
+function HeroSection({ onScrollToDemo }: { onScrollToDemo: () => void }) {
+  const BENTO_METRICS = [
+    { l: 'SHARPE RATIO', v: SHOW.sharpe,     c: P.accent },
+    { l: 'MDD',          v: `−${SHOW.mdd}%`, c: P.neg    },
+    { l: 'RSI (14)',     v: SHOW.rsi,         c: P.fg     },
+    { l: 'VOLATILITY',  v: `${SHOW.vol}%`,   c: P.fgSub  },
+  ]
+  return (
+    <section style={{
+      background: P.bg,
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      paddingTop: '84px', position: 'relative', overflow: 'hidden',
+    }}>
+      {/* chart-grid background */}
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+        backgroundImage: `linear-gradient(rgba(27,79,204,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(27,79,204,0.05) 1px, transparent 1px)`,
+        backgroundSize: '48px 48px',
+      }} />
+      {/* top-left accent glow — anchors the headline */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0,
+        width: '720px', height: '500px', pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(ellipse at top left, rgba(27,79,204,0.08) 0%, transparent 65%)',
+      }} />
+
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: '1200px', margin: '0 auto', width: '100%', padding: '36px 48px 64px' }}>
+
+        {/* ── left-flush top text ── */}
+        <div style={{ marginBottom: '36px' }}>
+          {/* eyebrow badge */}
+          <div style={{
+            display: 'flex', width: 'fit-content', alignItems: 'center', gap: '8px',
+            border: `1px solid rgba(0,0,0,0.1)`,
+            borderRadius: '4px', padding: '5px 14px',
+            marginBottom: '24px', background: 'rgba(0,0,0,0.02)',
+          }}>
+            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: P.pos }} />
+            <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: P.fgSub, letterSpacing: '0.06em' }}>
+              무료 오픈 베타 · OHLCV · 포트폴리오 · 수익률 분석
+            </span>
+          </div>
+
+          {/* headline — 2-line stack, left-flush */}
+          <h1 style={{
+            fontFamily: SANS, fontWeight: 900,
+            fontSize: 'clamp(3rem, 5.6vw, 6rem)',
+            color: P.fg, lineHeight: 1.0,
+            letterSpacing: '-0.055em', margin: '0 0 20px',
+            wordBreak: 'keep-all', maxWidth: '14ch',
+          }}>
+            주가 분석,<br />
+            <span style={{ color: P.accent }}>지금 시작하세요.</span>
+          </h1>
+
+          {/* sub */}
+          <p style={{
+            fontFamily: SANS, fontSize: '1.08rem', fontWeight: 400,
+            color: P.fgSub, lineHeight: 1.5,
+            margin: '0 0 32px', maxWidth: '52ch',
+          }}>
+            OHLCV CSV 업로드 하나로 캔들스틱 · RSI · MDD · Sharpe Ratio를 즉시 확인하세요.
+          </p>
+
+          {/* CTAs */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button onClick={onScrollToDemo} style={{
+              fontFamily: SANS, fontWeight: 600, fontSize: '0.95rem',
+              padding: '13px 32px', background: P.accent, color: '#fff',
+              border: 'none', borderRadius: '6px', cursor: 'pointer',
+              transition: 'opacity 0.15s',
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.82' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
+            >지금 분석하기</button>
+            <button onClick={() => document.getElementById('live-charts')?.scrollIntoView({ behavior: 'smooth' })} style={{
+              fontFamily: SANS, fontWeight: 400, fontSize: '0.95rem',
+              padding: '13px 22px', background: 'rgba(0,0,0,0.03)',
+              color: P.fgSub, border: `1px solid rgba(0,0,0,0.12)`,
+              borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = P.fg; el.style.borderColor = 'rgba(0,0,0,0.3)' }}
+              onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = P.fgSub; el.style.borderColor = 'rgba(0,0,0,0.12)' }}
+            >차트 미리보기 →</button>
+          </div>
+        </div>
+
+        {/* ── bento grid ── */}
+        <div style={{ position: 'relative' }}>
+        {/* scroll-invite fade */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '100px', background: `linear-gradient(to bottom, transparent 0%, ${P.bg} 100%)`, zIndex: 2, pointerEvents: 'none' }} />
+        {/* scroll indicator */}
+        <div style={{ position: 'absolute', bottom: '-32px', left: '50%', transform: 'translateX(-50%)', zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontFamily: MONO, fontSize: '0.44rem', color: P.fgSub, letterSpacing: '0.1em' }}>SCROLL</span>
+          <div className="scroll-bounce" style={{ width: '1px', height: '20px', background: `linear-gradient(to bottom, ${P.fgSub}, transparent)` }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gridTemplateRows: '1fr auto', gap: '12px', height: '400px' }}>
+
+          {/* CELL A — main chart preview (spans 2 rows) */}
+          <div style={{
+            gridRow: '1 / 3',
+            background: '#FFFFFF', border: `1px solid ${P.border}`,
+            borderRadius: '10px', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            {/* browser chrome */}
+            <div style={{ padding: '10px 16px', borderBottom: `1px solid ${P.border}`, display: 'flex', alignItems: 'center', gap: '8px', background: P.surface }}>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                {['#FF5F57','#FFBD2E','#28C840'].map(c => <div key={c} style={{ width: '9px', height: '9px', borderRadius: '50%', background: c, opacity: 0.75 }} />)}
+              </div>
+              <div style={{ flex: 1, height: '20px', background: P.border, borderRadius: '3px', display: 'flex', alignItems: 'center', padding: '0 10px', gap: '6px' }}>
+                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: P.pos }} />
+                <span style={{ fontFamily: MONO, fontSize: '0.48rem', color: P.fgSub }}>investdash.app/dashboard</span>
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: '0.44rem', color: P.fgSub }}>삼성전자 · 504 rows</span>
+            </div>
+            {/* chart content */}
+            <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '14px' }}>
+                <div>
+                  <div style={{ fontFamily: MONO, fontSize: '0.44rem', color: P.fgSub, letterSpacing: '0.1em', marginBottom: '4px' }}>CLOSE PRICE</div>
+                  <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: '1.8rem', color: P.fg, letterSpacing: '-0.03em', lineHeight: 1 }}>{SHOW.latest}<span style={{ fontSize: '0.85rem', color: P.fgSub, fontWeight: 400 }}> ₩</span></div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(15,184,106,0.1)', border: '1px solid rgba(15,184,106,0.2)', padding: '6px 12px', borderRadius: '4px' }}>
+                  <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: P.pos }} />
+                  <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: '0.6rem', color: P.pos }}>+1.24% 오늘</span>
+                </div>
+              </div>
+              <div style={{ flex: 1, minHeight: '120px', marginBottom: '14px', background: P.fgDim, borderRadius: '6px', overflow: 'hidden' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={MINI_DATA} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="bentoGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={P.accent} stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={P.accent} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <YAxis domain={['auto','auto']} hide />
+                    <Area type="monotone" dataKey="p" stroke={P.accent} strokeWidth={2} fill="url(#bentoGrad)" dot={false} animationDuration={2000} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px' }}>
+                {BENTO_METRICS.map(m => (
+                  <div key={m.l} style={{ background: P.fgDim, borderRadius: '6px', padding: '11px 10px', border: `1px solid ${P.border}` }}>
+                    <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: '1rem', color: m.c, lineHeight: 1 }}>{m.v}</div>
+                    <div style={{ fontFamily: MONO, fontSize: '0.4rem', color: P.fgSub, letterSpacing: '0.08em', marginTop: '5px' }}>{m.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* CELL B — upload CTA */}
+          <div style={{
+            background: P.accent, borderRadius: '10px',
+            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+            overflow: 'hidden', position: 'relative',
+          }}>
+            {/* subtle inner glow top */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '120px', background: 'radial-gradient(ellipse at 50% -20%, rgba(255,255,255,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+            <div style={{ padding: '28px 28px 0', position: 'relative', zIndex: 1 }}>
+              {/* upload icon */}
+              <div style={{ marginBottom: '16px' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 15V3M12 3L8 7M12 3L16 7" stroke="rgba(255,255,255,0.8)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 15v4a2 2 0 002 2h14a2 2 0 002-2v-4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.12em', marginBottom: '10px' }}>UPLOAD CSV</div>
+              <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: '1.45rem', color: '#fff', lineHeight: 1.2, letterSpacing: '-0.025em' }}>드래그하면<br />바로 분석</div>
+            </div>
+            <div style={{ padding: '0 28px 28px', position: 'relative', zIndex: 1 }}>
+              <button onClick={onScrollToDemo} style={{
+                fontFamily: SANS, fontWeight: 600, fontSize: '0.88rem',
+                padding: '11px 0', background: 'rgba(0,0,0,0.25)', color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', cursor: 'pointer', width: '100%',
+                transition: 'background 0.15s',
+              }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.4)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.25)' }}
+              >시작하기 →</button>
+            </div>
+          </div>
+
+          {/* CELL C — stats */}
+          <div style={{
+            background: P.surface, border: `1px solid ${P.border}`,
+            borderRadius: '10px', padding: '20px 24px',
+            display: 'grid', gridTemplateColumns: 'repeat(3,1fr)',
+            gap: '0', alignItems: 'center',
+          }}>
+            {[
+              { val: '504', unit: '일', label: '거래 데이터' },
+              { val: '7',   unit: '+',  label: '자동 지표' },
+              { val: '무료', unit: '',  label: '완전 무료' },
+            ].map((s, i) => (
+              <div key={s.label} style={{ textAlign: 'center', borderRight: i < 2 ? `1px solid ${P.border}` : 'none', padding: '0 8px' }}>
+                <div style={{ fontFamily: MONO, fontWeight: 800, fontSize: '1.5rem', color: P.fg, lineHeight: 1, letterSpacing: '-0.04em' }}>
+                  {s.val}<span style={{ fontSize: '0.9rem', color: P.fgSub, fontWeight: 400 }}>{s.unit}</span>
+                </div>
+                <div style={{ fontFamily: SANS, fontSize: '0.7rem', color: P.fgSub, marginTop: '6px' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Live Charts ───────────────────────────────────────────────────────────────
+function LiveChartsSection() {
+  return (
+    <section id="live-charts" style={{ background: P.bg, borderTop: `1px solid ${P.border}` }}>
+      <div style={{ borderBottom: `1px solid ${P.border}` }}>
+        <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '16px 56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ width: '2px', height: '14px', background: P.accent }} />
+            <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: P.fg, letterSpacing: '0.1em', fontWeight: 600 }}>LIVE PREVIEW</span>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: P.pos }} className="gold-pulse" />
+            <span style={{ fontFamily: MONO, fontSize: '0.56rem', color: P.fgSub }}>실제 컴포넌트 · 데모 데이터</span>
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: P.fgSub }}>삼성전자 GBM 시뮬레이션 · 504 rows</span>
+        </div>
+      </div>
+      <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '0 56px' }}>
+        <div style={{ borderBottom: `1px solid ${P.border}`, paddingTop: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub, letterSpacing: '0.1em' }}>CANDLESTICK</span>
+            <div style={{ height: '1px', flex: 1, background: P.border }} />
+            <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub }}>MA20 · MA50 · BOLLINGER</span>
+          </div>
+          <CandlestickChart data={DEMO_STOCK_DATA} metrics={DEMO_METRICS} height={300} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', borderBottom: `1px solid ${P.border}` }}>
+          <div style={{ borderRight: `1px solid ${P.border}`, paddingTop: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub, letterSpacing: '0.1em' }}>RSI(14)</span>
+              <div style={{ height: '1px', flex: 1, background: P.border }} />
+              <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub }}>과매수 70 · 과매도 30</span>
+            </div>
+            <RSIChart data={DEMO_STOCK_DATA} rsiSeries={DEMO_METRICS.rsiSeries} height={160} />
+          </div>
+          <div style={{ padding: '32px 40px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub, letterSpacing: '0.12em', marginBottom: '20px', textTransform: 'uppercase' }}>자동 계산 지표</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 28px' }}>
+              {[
+                { l: 'SHARPE',     v: SHOW.sharpe,   c: P.accent },
+                { l: 'SORTINO',    v: SHOW.sortino,  c: P.accent },
+                { l: 'MDD',        v: `−${SHOW.mdd}%`, c: P.neg    },
+                { l: 'VOLATILITY', v: `${SHOW.vol}%`, c: P.fgSub   },
+                { l: 'RSI(14)',    v: SHOW.rsi,       c: P.fg       },
+                { l: 'MA20',       v: (DEMO_METRICS.ma20 ?? 0).toLocaleString('ko-KR', { maximumFractionDigits: 0 }), c: P.fg },
+              ].map(m => (
+                <div key={m.l}>
+                  <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: '1.2rem', color: m.c, lineHeight: 1 }}>{m.v}</div>
+                  <div style={{ fontFamily: MONO, fontSize: '0.46rem', color: P.fgSub, letterSpacing: '0.12em', marginTop: '4px', textTransform: 'uppercase' }}>{m.l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── How It Works ──────────────────────────────────────────────────────────────
+function HowSection() {
+  const STEPS = [
+    {
+      n: '01', tag: 'UPLOAD', t: 'CSV 업로드',
+      d: '주가 OHLCV, 포트폴리오, 수익률 — 어떤 형식이든 드래그합니다.',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 16V8M8 12l4-5 4 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" strokeOpacity={0.4} />
+        </svg>
+      ),
+    },
+    {
+      n: '02', tag: 'DETECT', t: '스키마 자동 감지',
+      d: '컬럼명을 분석해 데이터 타입을 자동으로 분류합니다.',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" strokeOpacity={0.4} />
+        </svg>
+      ),
+    },
+    {
+      n: '03', tag: 'RENDER', t: '대시보드 즉시 생성',
+      d: '캔들스틱, RSI, 낙폭 차트와 인사이트가 즉시 렌더링됩니다.',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M4 17l5-6 3 3 3-4 5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" strokeOpacity={0.4} />
+        </svg>
+      ),
+    },
+  ]
+
+  return (
+    <section id="how" style={{ background: P.surface, borderTop: `1px solid ${P.border}`, overflow: 'hidden', position: 'relative' }}>
+
+      <div style={{ maxWidth: '960px', margin: '0 auto', padding: '100px 56px', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '72px', borderBottom: `1px solid ${P.border}`, paddingBottom: '28px' }}>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '14px' }}>How it works</div>
+            <h2 style={{ fontFamily: SANS, fontWeight: 900, fontSize: 'clamp(2.2rem, 3.8vw, 3.6rem)', color: P.fg, lineHeight: 1, margin: 0, letterSpacing: '-0.04em', wordBreak: 'keep-all' }}>
+              세 단계.<br />
+              <span style={{ color: P.accent }}>그게 전부입니다.</span>
+            </h2>
+          </div>
+          <p style={{ fontFamily: SANS, fontWeight: 300, fontSize: '0.9rem', color: P.fgSub, lineHeight: 1.9, margin: 0, maxWidth: '26ch', textAlign: 'right', wordBreak: 'keep-all' }}>
+            설정 없음. API 키 없음.<br />CSV 업로드 하나면 충분합니다.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: '1px', background: P.border, borderRadius: '12px', overflow: 'hidden' }}>
+          {STEPS.map((s, i) => (
+            <div key={s.n}
+              style={{ background: P.surface, padding: '48px 40px', position: 'relative', overflow: 'hidden', transition: 'background 0.2s', cursor: 'default' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = P.surfaceHi }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = P.surface }}
+            >
+              <div style={{ position: 'absolute', bottom: '-10px', right: '16px', fontFamily: MONO, fontWeight: 900, fontSize: '5.5rem', color: P.border, lineHeight: 1, letterSpacing: '-0.06em', userSelect: 'none' }}>{s.n}</div>
+              <div style={{ color: P.accent, marginBottom: '24px' }}>{s.icon}</div>
+              <div style={{ fontFamily: MONO, fontSize: '0.46rem', color: P.fgSub, letterSpacing: '0.18em', marginBottom: '14px' }}>{s.tag}</div>
+              <h3 style={{ fontFamily: SANS, fontWeight: 800, fontSize: '1.2rem', color: P.fg, margin: '0 0 12px', letterSpacing: '-0.02em' }}>{s.t}</h3>
+              <p style={{ fontFamily: SANS, fontWeight: 300, fontSize: '0.88rem', color: P.fgSub, lineHeight: 1.9, margin: 0 }}>{s.d}</p>
+              {i < 2 && (
+                <div style={{ position: 'absolute', right: '-10px', top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: '0.8rem', color: P.borderHi, zIndex: 2 }}>›</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Architecture ──────────────────────────────────────────────────────────────
+function ArchSection() {
+  const SKILLS = [
+    { idx: '01', file: 'data-schema.md',       title: '스키마 감지',  desc: '컬럼 패턴 → 5종 데이터 타입 자동 분류' },
+    { idx: '02', file: 'visualization.md',      title: '시각화 선택',  desc: '타입별 차트 렌더링 조건-행동 규칙' },
+    { idx: '03', file: 'indicators.md',         title: '지표 계산',    desc: 'RSI · Sharpe · MDD · CAGR 공식 정의' },
+    { idx: '04', file: 'insight-generation.md', title: 'AI 인사이트',  desc: 'Claude 시스템 프롬프트 + 규칙 기반 폴백' },
+    { idx: '05', file: 'dashboard-layout.md',   title: '레이아웃',     desc: 'F-Pattern · KPI · 반응형 그리드 명세' },
+  ]
+  return (
+    <section id="arch" style={{ background: P.bg, borderTop: `1px solid ${P.border}` }}>
+      <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '100px 56px' }}>
+        <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '44px' }}>Architecture</div>
+        <div style={{ borderRadius: '12px', overflow: 'hidden', border: `1px solid ${P.border}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '44px 220px 160px 1fr', padding: '10px 20px', background: P.surfaceHi, borderBottom: `1px solid ${P.border}` }}>
+            {['#', 'FILE', 'MODULE', 'DESCRIPTION'].map(h => (
+              <span key={h} style={{ fontFamily: MONO, fontSize: '0.48rem', color: P.fgSub, letterSpacing: '0.1em' }}>{h}</span>
+            ))}
+          </div>
+          {SKILLS.map((s, i) => (
+            <div key={s.file}
+              style={{ display: 'grid', gridTemplateColumns: '44px 220px 160px 1fr', padding: '18px 20px', borderBottom: i < SKILLS.length - 1 ? `1px solid ${P.border}` : 'none', background: P.bg, transition: 'background 0.15s', borderLeft: '2px solid transparent', cursor: 'default' }}
+              onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.background = P.surface; el.style.borderLeftColor = P.accent }}
+              onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.background = P.bg; el.style.borderLeftColor = 'transparent' }}
+            >
+              <span style={{ fontFamily: MONO, fontSize: '0.58rem', color: P.fgSub }}>{s.idx}</span>
+              <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: P.pos }}>{s.file}</span>
+              <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: '0.84rem', color: P.fg }}>{s.title}</span>
+              <span style={{ fontFamily: SANS, fontWeight: 300, fontSize: '0.84rem', color: P.fgSub, lineHeight: 1.6 }}>{s.desc}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '16px', marginTop: '24px' }}>
+          {[
+            { to: 504, label: 'TRADING DAYS', sub: '2년치 주가 데이터' },
+            { to: 7,   label: 'INDICATORS',   sub: 'RSI · Sharpe · MDD · CAGR ...' },
+            { to: 3,   label: 'DATA TYPES',   sub: 'OHLCV · Portfolio · Returns' },
+          ].map(s => (
+            <div key={s.label} style={{
+              background: P.surface, padding: '28px',
+              borderRadius: '10px', border: `1px solid ${P.border}`,
+              borderTop: `2px solid ${P.accent}`,
+            }}>
+              <div style={{ fontFamily: MONO, fontWeight: 900, fontSize: '2.8rem', color: P.fg, lineHeight: 1, letterSpacing: '-0.04em' }}>
+                <CountUp to={s.to} duration={2} delay={0.4} />
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: '0.5rem', color: P.accent, letterSpacing: '0.14em', marginTop: '10px', fontWeight: 600 }}>{s.label}</div>
+              <div style={{ fontFamily: MONO, fontSize: '0.46rem', color: P.fgSub, marginTop: '4px' }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Demo section ──────────────────────────────────────────────────────────────
+function DemoSection({ onDemo, onFile }: { onDemo: (t: 'stock' | 'portfolio' | 'returns') => void; onFile: (f: File) => void }) {
+  const DEMOS = [
+    { type: 'stock' as const,     label: 'STOCK_OHLCV', title: '주가 OHLCV',     sub: '삼성전자 2년 GBM 시뮬레이션', meta: 'Candlestick · MA20/50 · Bollinger · RSI · MDD', stat: '504 rows' },
+    { type: 'portfolio' as const, label: 'PORTFOLIO',   title: '포트폴리오',      sub: 'KOSPI 상위 12개 종목',        meta: 'Treemap · 가중 수익률 · 종목별 수익률 Bar',      stat: '12 assets' },
+    { type: 'returns' as const,   label: 'RETURNS',     title: '수익률 시계열',   sub: '3년 일간 수익률 데이터',       meta: 'Cumulative Return · Drawdown · Sharpe',          stat: '756 rows' },
+  ]
+  return (
+    <section id="demo" style={{ background: P.surface, borderTop: `1px solid ${P.border}` }}>
+      <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '100px 56px' }}>
+        <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '44px' }}>Try it now</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '16px', marginBottom: '16px' }}>
+          {DEMOS.map(d => (
+            <SpotlightCard key={d.type} spotlightColor="rgba(59,110,232,0.06)" style={{ background: P.bg, borderRadius: '12px', border: `1px solid ${P.border}` }}>
+              <button onClick={() => onDemo(d.type)} style={{
+                width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+                padding: '32px 28px', display: 'flex', flexDirection: 'column',
+                borderTop: `2px solid transparent`, borderRadius: '12px',
+                transition: 'border-top-color 0.2s',
+              }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderTopColor = P.accent }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderTopColor = 'transparent' }}
+              >
+                <div style={{ fontFamily: MONO, fontSize: '0.5rem', color: P.fgSub, letterSpacing: '0.14em', marginBottom: '16px' }}>{d.label}</div>
+                <div style={{ fontFamily: SANS, fontWeight: 900, fontSize: '1.3rem', color: P.fg, letterSpacing: '-0.025em', marginBottom: '8px' }}>{d.title}</div>
+                <div style={{ fontFamily: SANS, fontWeight: 300, fontSize: '0.85rem', color: P.fgSub, marginBottom: '20px' }}>{d.sub}</div>
+                <div style={{ height: '1px', background: P.border, marginBottom: '20px' }} />
+                <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: P.fgSub, lineHeight: 2, flexGrow: 1 }}>{d.meta}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '28px' }}>
+                  <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: P.fgSub }}>{d.stat}</span>
+                  <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: P.accent, fontWeight: 600 }}>→</span>
+                </div>
+              </button>
+            </SpotlightCard>
+          ))}
+        </div>
+        <div style={{ background: P.bg, padding: '48px', border: `1px solid ${P.border}`, textAlign: 'center', borderRadius: '12px' }}>
+          <div style={{ fontFamily: MONO, fontSize: '0.56rem', color: P.fgSub, letterSpacing: '0.12em', marginBottom: '24px', textTransform: 'uppercase' }}>직접 데이터 업로드</div>
+          <UploadZone onFile={onFile} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── App root ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [appState, setAppState] = useState<AppState>('landing')
-  const [payload, setPayload] = useState<DashboardPayload | null>(null)
+  const [payload,  setPayload]  = useState<DashboardPayload | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const uploadRef = useRef<HTMLElement>(null)
 
   const handleFile = useCallback((file: File) => {
-    setParseError(null)
-    setAppState('loading')
+    setParseError(null); setAppState('loading')
     Papa.parse<Record<string, string>>(file, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
+      header: true, dynamicTyping: true, skipEmptyLines: true,
       complete: (result) => {
         const headers = result.meta.fields ?? []
         const rawRows = result.data as Record<string, string | number | null>[]
-        if (rawRows.length === 0) { setParseError('파일에 데이터가 없습니다.'); setAppState('landing'); return }
-        const schema = detectSchema(headers, rawRows)
-        setPayload(buildPayload(schema, rawRows))
+        if (!rawRows.length) { setParseError('파일에 데이터가 없습니다.'); setAppState('landing'); return }
+        setPayload(buildPayload(detectSchema(headers, rawRows), rawRows))
         setAppState('dashboard')
       },
       error: (err) => { setParseError('파싱 오류: ' + err.message); setAppState('landing') },
@@ -54,769 +744,59 @@ export default function App() {
   }, [])
 
   const loadDemo = useCallback((type: 'stock' | 'portfolio' | 'returns') => {
-    if (type === 'stock') {
+    if (type === 'stock')
       setPayload({ schema: DEMO_STOCK_SCHEMA as DetectedSchema & { dataType: 'STOCK_OHLCV' }, rows: DEMO_STOCK_DATA, rawRows: DEMO_STOCK_DATA as unknown as Record<string, string | number | null>[] })
-    } else if (type === 'portfolio') {
+    else if (type === 'portfolio')
       setPayload({ schema: DEMO_PORTFOLIO_SCHEMA as DetectedSchema & { dataType: 'PORTFOLIO' }, rows: DEMO_PORTFOLIO_DATA, rawRows: DEMO_PORTFOLIO_DATA as unknown as Record<string, string | number | null>[] })
-    } else {
+    else
       setPayload({ schema: DEMO_RETURNS_SCHEMA as DetectedSchema & { dataType: 'RETURNS' }, rows: DEMO_RETURNS_DATA, rawRows: DEMO_RETURNS_DATA as unknown as Record<string, string | number | null>[] })
-    }
     setAppState('dashboard')
   }, [])
 
-  const handleReset = useCallback(() => { setAppState('landing'); setPayload(null); setParseError(null) }, [])
+  const handleReset    = useCallback(() => { setAppState('landing'); setPayload(null); setParseError(null) }, [])
+  const scrollToDemo   = useCallback(() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }), [])
+  const scrollToUpload = useCallback(() => uploadRef.current?.scrollIntoView({ behavior: 'smooth' }), [])
 
-  if (appState === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#ffffff', backgroundImage: 'radial-gradient(circle, #e0e0e0 1px, transparent 1px)', backgroundSize: '28px 28px' }}>
-        <p className="text-[#aaaaaa] text-sm tracking-widest uppercase">분석 중</p>
-      </div>
-    )
-  }
-
-  if (appState === 'dashboard' && payload) {
-    return <DashboardShell data={payload} onReset={handleReset} />
-  }
-
-  return <LandingPage onFile={handleFile} onDemo={loadDemo} parseError={parseError} />
-}
-
-// ─── Navbar ────────────────────────────────────────────────────────────────────
-
-const NAV_LINKS = [
-  { label: 'How it Works', id: 'how-it-works' },
-  { label: 'Charts',       id: 'charts'       },
-  { label: 'Skills',       id: 'skills'       },
-  { label: 'Demo',         id: 'demo'         },
-]
-
-function Navbar({ onTryNow }: { onTryNow: () => void }) {
-  const [scrolled, setScrolled] = useState(false)
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  return (
-    <nav
-      className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
-      style={
-        scrolled
-          ? {
-              background: 'rgba(255,255,255,0.88)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              borderBottom: '1px solid rgba(0,0,0,0.08)',
-            }
-          : { background: 'transparent' }
-      }
-    >
-      <div className="max-w-6xl mx-auto px-8 h-16 flex items-center justify-between">
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="text-sm font-semibold tracking-widest uppercase text-[#0a0a0a] select-none bg-transparent border-none cursor-pointer hover:opacity-60 transition-opacity duration-200"
-        >
-          InvestDash
-        </button>
-
-        <ul className="hidden md:flex items-center gap-8">
-          {NAV_LINKS.map(({ label, id }) => (
-            <li key={id}>
-              <button
-                onClick={() => scrollTo(id)}
-                className="text-sm text-[#666666] hover:text-[#0a0a0a] transition-colors duration-200 bg-transparent border-none cursor-pointer"
-              >
-                {label}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <button
-          onClick={onTryNow}
-          style={{
-            fontFamily: "'Noto Sans KR', sans-serif",
-            fontWeight: 700,
-            fontSize: '0.8125rem',
-            letterSpacing: '0.01em',
-            padding: '0.5rem 1.25rem',
-            borderRadius: '9999px',
-            background: '#ffffff',
-            color: '#0a0a0a',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-          }}
-          onMouseEnter={e => {
-            const el = e.currentTarget as HTMLButtonElement
-            el.style.transform = 'translateY(-1px)'
-            el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.15)'
-          }}
-          onMouseLeave={e => {
-            const el = e.currentTarget as HTMLButtonElement
-            el.style.transform = 'translateY(0)'
-            el.style.boxShadow = 'none'
-          }}
-        >
-          시작하기
-        </button>
-      </div>
-    </nav>
-  )
-}
-
-// ─── Section wrapper ───────────────────────────────────────────────────────────
-
-function Section({ id, children, className = '' }: { id: string; children: React.ReactNode; className?: string }) {
-  return (
-    <section id={id} className={'py-16 px-8 ' + className} style={{ background: 'inherit' }}>
-      <div className="max-w-5xl mx-auto">
-        {children}
-      </div>
-    </section>
-  )
-}
-
-// 섹션 헤더(라벨+제목+설명)를 흰 배경 블록으로 감싸 가독성 확보
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      background: '#ffffff',
-      border: '1px solid #e8e8e8',
-      padding: '2rem 2.25rem 2rem',
-      marginBottom: '0',
-      display: 'inline-block',
-      maxWidth: '38rem',
-    }}>
-      {children}
-    </div>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs uppercase tracking-[0.2em] mb-3" style={{ color: '#aaaaaa' }}>{children}</p>
-  )
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-3xl font-semibold mb-3 leading-snug" style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, letterSpacing: '-0.01em', color: '#0a0a0a' }}>{children}</h2>
-  )
-}
-
-function SectionDesc({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-sm leading-relaxed" style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 400, color: '#555555' }}>{children}</p>
-  )
-}
-
-// ─── How it Works ─────────────────────────────────────────────────────────────
-
-const HOW_STEPS = [
-  {
-    num: '01',
-    title: 'CSV 업로드',
-    desc: '주가 OHLCV, 포트폴리오, 수익률 등 어떤 형식이든 드래그해서 올립니다.',
-  },
-  {
-    num: '02',
-    title: '스키마 자동 감지',
-    desc: 'Skills.md 규칙에 따라 컬럼명을 분석해 데이터 타입을 자동으로 분류합니다.',
-  },
-  {
-    num: '03',
-    title: '차트 + 인사이트 생성',
-    desc: '데이터 타입에 맞는 차트를 렌더링하고 AI가 핵심 인사이트를 한국어로 생성합니다.',
-  },
-]
-
-function HowItWorksSection() {
-  return (
-    <Section id="how-it-works">
-      <SectionHeader>
-        <SectionLabel>Process</SectionLabel>
-        <SectionTitle>3단계로 끝납니다</SectionTitle>
-        <SectionDesc>
-          복잡한 설정 없이 파일 하나로 전문 금융 대시보드를 즉시 확인할 수 있습니다.
-        </SectionDesc>
-      </SectionHeader>
-
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-px bg-[#d8d8d8]">
-        {HOW_STEPS.map((step) => (
-          <div key={step.num} className="bg-white p-8" style={{ backdropFilter: 'blur(0px)' }}>
-            <span className="text-5xl block mb-6 leading-none" style={{ fontFamily: "'Inter', monospace", color: 'rgba(0,0,0,0.15)', fontWeight: 300 }}>{step.num}</span>
-            <h3 style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, color: '#0a0a0a', marginBottom: '0.625rem' }}>{step.title}</h3>
-            <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.9rem', lineHeight: 1.8, color: '#666666' }}>{step.desc}</p>
-          </div>
-        ))}
-      </div>
-    </Section>
-  )
-}
-
-// ─── Charts ───────────────────────────────────────────────────────────────────
-
-const CHART_ITEMS = [
-  {
-    type: 'STOCK_OHLCV',
-    title: '주가 캔들스틱',
-    desc: 'lightweight-charts v5 기반의 캔들스틱 차트. MA20/MA50 오버레이, 거래량 서브패널 포함.',
-    tags: ['Candlestick', 'MA20', 'MA50', 'Volume'],
-  },
-  {
-    type: 'PORTFOLIO',
-    title: '포트폴리오 트리맵',
-    desc: '종목별 비중을 크기로, 수익률을 밝기로 표현. 한눈에 포트폴리오 구성을 파악.',
-    tags: ['Treemap', 'Weight', 'Return Rate'],
-  },
-  {
-    type: 'RETURNS',
-    title: '누적 수익률',
-    desc: '일간 수익률 데이터로 누적 수익 곡선과 낙폭(Drawdown) 차트를 자동 생성.',
-    tags: ['Cumulative', 'Drawdown', 'Area Chart'],
-  },
-  {
-    type: 'INDICATORS',
-    title: '기술 지표',
-    desc: 'RSI(14), Bollinger Bands, Sharpe Ratio, Sortino, MDD, CAGR을 자동 계산.',
-    tags: ['RSI', 'Bollinger', 'Sharpe', 'MDD'],
-  },
-]
-
-function ChartsSection() {
-  return (
-    <Section id="charts">
-      <SectionHeader>
-        <SectionLabel>Visualization</SectionLabel>
-        <SectionTitle>데이터 타입에 맞는 차트를 자동 선택</SectionTitle>
-        <SectionDesc>
-          업로드한 데이터가 무엇인지 감지해 최적의 차트 조합을 렌더링합니다.
-          별도 설정 없이 즉시 전문 금융 시각화를 확인할 수 있습니다.
-        </SectionDesc>
-      </SectionHeader>
-
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-px bg-[#d8d8d8]">
-        {CHART_ITEMS.map((item) => (
-          <div key={item.type} className="bg-white p-8 group">
-            <div className="flex items-start justify-between mb-4">
-              <span className="text-xs uppercase tracking-widest" style={{ color: '#aaaaaa', fontFamily: "'Inter', monospace" }}>{item.type}</span>
-            </div>
-            <h3 style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: '1.1rem', color: '#0a0a0a', marginBottom: '0.625rem' }}>{item.title}</h3>
-            <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.875rem', lineHeight: 1.8, color: '#666666', marginBottom: '1.25rem' }}>{item.desc}</p>
-            <div className="flex flex-wrap gap-2">
-              {item.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs px-2 py-1" style={{ color: '#888888', border: '1px solid #e0e0e0' }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </Section>
-  )
-}
-
-// ─── Skills ───────────────────────────────────────────────────────────────────
-
-const SKILL_FILES = [
-  {
-    file: 'data-schema.md',
-    title: '데이터 스키마 감지',
-    desc: '컬럼명 패턴 매칭으로 OHLCV / 포트폴리오 / 수익률 등 5종 데이터 타입을 자동 분류하는 규칙 정의.',
-  },
-  {
-    file: 'visualization.md',
-    title: '시각화 선택 기준',
-    desc: '데이터 타입별로 어떤 차트를 렌더링할지 결정하는 조건-행동 규칙과 색상 시스템 명세.',
-  },
-  {
-    file: 'indicators.md',
-    title: '금융 지표 계산',
-    desc: 'RSI, 볼린저 밴드, 샤프 비율, MDD, CAGR 등 모든 지표의 정확한 공식과 해석 기준 정의.',
-  },
-  {
-    file: 'insight-generation.md',
-    title: 'AI 인사이트 생성',
-    desc: 'Claude API 시스템 프롬프트로 주입되는 인사이트 템플릿. API 미사용 시 규칙 기반 폴백.',
-  },
-  {
-    file: 'dashboard-layout.md',
-    title: '대시보드 레이아웃',
-    desc: 'F-Pattern 배치 원칙, KPI 카드 스펙, 반응형 그리드 규칙, 다크 테마 색상 시스템 정의.',
-  },
-]
-
-function SkillsSection() {
-  return (
-    <Section id="skills">
-      <SectionHeader>
-        <SectionLabel>Architecture</SectionLabel>
-        <SectionTitle>Skills.md가 코드의 행동을 결정합니다</SectionTitle>
-        <SectionDesc>
-          5개의 Skills.md 파일이 시스템 전체의 규칙을 정의합니다. 코드는 Skills.md를 읽고 실행하는
-          인터프리터입니다. LLM 프롬프트 주입부터 차트 선택, 레이아웃까지 모두 Skills.md로 제어됩니다.
-        </SectionDesc>
-      </SectionHeader>
-
-      <div className="mt-8 space-y-px bg-[#d8d8d8]">
-        {SKILL_FILES.map((skill, i) => (
-          <div key={skill.file} className="bg-white px-8 py-6 flex items-start gap-8">
-            <span className="text-2xl w-8 shrink-0 mt-0.5" style={{ fontFamily: "'Inter', monospace", color: 'rgba(0,0,0,0.2)', fontWeight: 300 }}>
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-2">
-                <code className="text-xs font-mono" style={{ color: '#aaaaaa' }}>{skill.file}</code>
-              </div>
-              <h3 style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 500, color: '#0a0a0a', marginBottom: '0.375rem' }}>{skill.title}</h3>
-              <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.875rem', lineHeight: 1.8, color: '#666666' }}>{skill.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-10 p-6 border border-[#e0e0e0] bg-white">
-        <p className="text-xs leading-relaxed font-mono" style={{ color: '#888888', fontFamily: "'Inter', monospace" }}>
-          {'// Skills.md → 시스템 프롬프트 주입 예시'}<br />
-          {'const systemPrompt = fs.readFileSync("skills/insight-generation.md")'}<br />
-          {'// Claude API 호출 시 규칙을 컨텍스트로 주입'}<br />
-          {'generateInsights({ systemPrompt, metrics, dataType })'}
-        </p>
-      </div>
-    </Section>
-  )
-}
-
-// ─── Demo ─────────────────────────────────────────────────────────────────────
-
-interface DemoSectionProps {
-  onDemo: (type: 'stock' | 'portfolio' | 'returns') => void
-  onFile: (file: File) => void
-}
-
-const DEMOS: Array<{
-  type: 'stock' | 'portfolio' | 'returns'
-  title: string
-  subtitle: string
-  meta: string
-}> = [
-  {
-    type: 'stock',
-    title: '주가 OHLCV',
-    subtitle: '삼성전자 2년치 시뮬레이션',
-    meta: '504 거래일 · GBM 모델 · MA20/50 · RSI · Bollinger',
-  },
-  {
-    type: 'portfolio',
-    title: '포트폴리오',
-    subtitle: 'KOSPI 상위 12개 종목',
-    meta: '트리맵 · 수익률 바 차트 · 가중 수익률 · 집중도',
-  },
-  {
-    type: 'returns',
-    title: '수익률 시계열',
-    subtitle: '3년 일간 수익률 데이터',
-    meta: '756일 · 누적 수익률 · MDD · Sharpe · Sortino',
-  },
-]
-
-function DemoSection({ onDemo, onFile }: DemoSectionProps) {
-  return (
-    <Section id="demo">
-      <SectionHeader>
-        <SectionLabel>Try it</SectionLabel>
-        <SectionTitle>바로 체험해보세요</SectionTitle>
-        <SectionDesc>
-          별도 회원가입 없이 데모 데이터로 즉시 시작하거나, 직접 CSV를 업로드해 분석할 수 있습니다.
-        </SectionDesc>
-      </SectionHeader>
-
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-        {DEMOS.map((demo) => (
-          <button
-            key={demo.type}
-            onClick={() => onDemo(demo.type)}
-            className="bg-white text-left group transition-all duration-200"
-            style={{
-              border: '1.5px solid #e0e0e0',
-              padding: '1.75rem',
-              cursor: 'pointer',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLButtonElement
-              el.style.border = '1.5px solid #0a0a0a'
-              el.style.transform = 'translateY(-2px)'
-              el.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)'
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLButtonElement
-              el.style.border = '1.5px solid #e0e0e0'
-              el.style.transform = 'translateY(0)'
-              el.style.boxShadow = 'none'
-            }}
-          >
-            {/* 클릭 유도 화살표 */}
-            <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem', opacity: 0.2, transition: 'opacity 0.2s, transform 0.2s' }}
-              className="group-hover:!opacity-80 group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M2 12L12 2M12 2H5M12 2v7" stroke="#0a0a0a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-
-            {/* 타입 배지 */}
-            <span style={{
-              fontFamily: "'Inter', monospace",
-              fontSize: '0.65rem',
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: '#aaaaaa',
-              display: 'block',
-              marginBottom: '0.875rem',
-            }}>
-              {demo.type === 'stock' ? 'STOCK_OHLCV' : demo.type === 'portfolio' ? 'PORTFOLIO' : 'RETURNS'}
-            </span>
-
-            <h3 style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: '1.05rem', color: '#0a0a0a', marginBottom: '0.4rem' }}>
-              {demo.title}
-            </h3>
-            <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 400, fontSize: '0.8rem', color: '#888888', marginBottom: '1.25rem' }}>
-              {demo.subtitle}
-            </p>
-
-            {/* 구분선 */}
-            <div style={{ height: '1px', background: '#f0f0f0', marginBottom: '1rem' }} />
-
-            {/* 메타 태그들 */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-              {demo.meta.split(' · ').map((tag) => (
-                <span key={tag} style={{
-                  fontFamily: "'Inter', monospace",
-                  fontSize: '0.65rem',
-                  color: '#999999',
-                  background: '#f7f7f7',
-                  padding: '0.2rem 0.5rem',
-                  border: '1px solid #eeeeee',
-                }}>
-                  {tag}
-                </span>
-              ))}
-            </div>
-
-            {/* 하단 CTA */}
-            <div style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <span style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 600, fontSize: '0.8rem', color: '#0a0a0a' }}>
-                데모 보기
-              </span>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M1.5 6h9M7 2.5l3.5 3.5L7 9.5" stroke="#0a0a0a" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-8">
-        <UploadZone onFile={onFile} />
-      </div>
-    </Section>
-  )
-}
-
-
-
-
-// ─── Shared demo price data ────────────────────────────────────────────────────
-const MINI_PRICES = [
-  { d: 'Jan', p: 71200 }, { d: 'Jan', p: 72500 }, { d: 'Jan', p: 70800 },
-  { d: 'Feb', p: 73400 }, { d: 'Feb', p: 74100 }, { d: 'Feb', p: 75600 },
-  { d: 'Feb', p: 74800 }, { d: 'Mar', p: 76200 }, { d: 'Mar', p: 77900 },
-  { d: 'Mar', p: 76500 }, { d: 'Apr', p: 78300 }, { d: 'Apr', p: 79800 },
-  { d: 'Apr', p: 78900 }, { d: 'May', p: 80100 }, { d: 'May', p: 81500 },
-  { d: 'May', p: 80700 }, { d: 'Jun', p: 79400 }, { d: 'Jun', p: 78100 },
-  { d: 'Jun', p: 79800 }, { d: 'Jul', p: 81200 }, { d: 'Jul', p: 82700 },
-  { d: 'Jul', p: 81900 }, { d: 'Aug', p: 83400 }, { d: 'Aug', p: 84900 },
-  { d: 'Aug', p: 83600 }, { d: 'Sep', p: 85200 }, { d: 'Sep', p: 84100 },
-  { d: 'Sep', p: 86300 }, { d: 'Oct', p: 87500 }, { d: 'Oct', p: 86200 },
-]
-
-// ─── Hero Demo Preview (오른쪽 하단 인라인 애니메이션) ─────────────────────────
-
-function HeroDemoPreview() {
-  const [phase, setPhase] = useState(0)
-  const [progress, setProgress] = useState(0)
-  const [visibleData, setVisibleData] = useState(0)
-  const [kpiVisible, setKpiVisible] = useState(false)
-  const [insightVisible, setInsightVisible] = useState(false)
-
-  const DURATIONS = [2800, 1800, 1200, 5800]
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPhase(p => {
-        const next = (p + 1) % 4
-        if (next === 0) {
-          setProgress(0); setVisibleData(0)
-          setKpiVisible(false); setInsightVisible(false)
-        }
-        return next
-      })
-    }, DURATIONS[phase])
-    return () => clearTimeout(timer)
-  }, [phase])
-
-  useEffect(() => {
-    if (phase !== 1) return
-    setProgress(0)
-    const iv = setInterval(() => setProgress(p => p >= 100 ? 100 : p + 5), 55)
-    return () => clearInterval(iv)
-  }, [phase])
-
-  useEffect(() => {
-    if (phase !== 3) return
-    setVisibleData(0); setKpiVisible(false); setInsightVisible(false)
-    const t1 = setTimeout(() => setKpiVisible(true), 250)
-    const t2 = setTimeout(() => setVisibleData(MINI_PRICES.length), 500)
-    const t3 = setTimeout(() => setInsightVisible(true), 1600)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [phase])
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '2rem', paddingTop: '2rem' }}>
-      {/* 브라우저 목업 */}
-      <div style={{ width: '100%', maxWidth: '480px', border: '1px solid #e0e0e0', borderRadius: '0.75rem', overflow: 'hidden', background: '#ffffff', boxShadow: '0 24px 64px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.06)' }}>
-
-        {/* 브라우저 크롬 */}
-        <div style={{ background: '#f5f5f5', borderBottom: '1px solid #e8e8e8', padding: '0.625rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', gap: '0.375rem' }}>
-            {['#ffbdbd','#ffd8a8','#c3f0ca'].map((c,i) => (
-              <div key={i} style={{ width: 9, height: 9, borderRadius: '50%', background: c }} />
-            ))}
-          </div>
-          <div style={{ flex: 1, background: '#ececec', borderRadius: '0.25rem', padding: '0.2rem 0.625rem', marginLeft: '0.25rem' }}>
-            <span style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#999999' }}>investdash.vercel.app</span>
-          </div>
+  if (appState === 'loading') return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: P.bg }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontFamily: MONO, fontSize: '0.6rem', color: P.accent, letterSpacing: '0.12em', marginBottom: '14px' }}>
+          분석 중<span className="blink-cursor" style={{ color: P.accent }}>▋</span>
         </div>
-
-        {/* 콘텐츠 */}
-        <div style={{ height: '340px', position: 'relative', overflow: 'hidden', background: '#fafafa' }}>
-
-          {/* Phase 0: Upload */}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', transition: 'opacity 0.4s', opacity: phase === 0 ? 1 : 0, pointerEvents: 'none', padding: '1.5rem' }}>
-            <div style={{ border: '2px dashed #dddddd', borderRadius: '0.5rem', padding: '2rem 3rem', textAlign: 'center', width: '100%' }}>
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ margin: '0 auto 0.875rem', display: 'block' }}>
-                <path d="M16 6v14M10 12l6-6 6 6" stroke="#bbbbbb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M6 24h20" stroke="#bbbbbb" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: '0.8rem', fontWeight: 400, color: '#888888', marginBottom: '0.375rem' }}>
-                투자 데이터를 드래그하세요
-              </p>
-              <p style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#bbbbbb' }}>CSV 지원</p>
-              <div style={{ marginTop: '1.25rem', padding: '0.4rem 0.875rem', background: '#f0f0f0', border: '1px solid #e0e0e0', borderRadius: '0.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="0.5" y="0.5" width="11" height="11" rx="1" stroke="#cccccc"/><path d="M2 4h8M2 6h6M2 8h4" stroke="#cccccc" strokeLinecap="round"/></svg>
-                <span style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#aaaaaa' }}>SAMSUNG_OHLCV_2024.csv</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Phase 1: Loading */}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1.25rem', transition: 'opacity 0.4s', opacity: phase === 1 ? 1 : 0, pointerEvents: 'none' }}>
-            <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.8rem', color: '#888888' }}>Skills.md 규칙으로 스키마 분석 중...</p>
-            <div style={{ width: '200px', height: '2px', background: '#eeeeee', borderRadius: '1px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: '#0a0a0a', borderRadius: '1px', width: progress + '%', transition: 'width 0.055s linear' }} />
-            </div>
-            <p style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#cccccc' }}>{progress}%</p>
-          </div>
-
-          {/* Phase 2: Schema Detected */}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '0.875rem', transition: 'opacity 0.4s', opacity: phase === 2 ? 1 : 0, pointerEvents: 'none' }}>
-            <div style={{ padding: '1.25rem 2rem', border: '1px solid #e8e8e8', borderRadius: '0.5rem', textAlign: 'center', background: '#ffffff' }}>
-              <p style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#aaaaaa', marginBottom: '0.625rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>스키마 감지 완료</p>
-              <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: '1.35rem', color: '#0a0a0a', marginBottom: '0.375rem' }}>STOCK_OHLCV</p>
-              <p style={{ fontFamily: "'Inter', monospace", fontSize: '0.65rem', color: '#bbbbbb' }}>504 rows · date, open, high, low, close, volume</p>
-            </div>
-            <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.75rem', color: '#bbbbbb' }}>대시보드 생성 중...</p>
-          </div>
-
-          {/* Phase 3: Dashboard */}
-          <div style={{ position: 'absolute', inset: 0, transition: 'opacity 0.5s', opacity: phase === 3 ? 1 : 0, pointerEvents: 'none', padding: '0.875rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-
-            {/* KPI 카드 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.375rem', transition: 'opacity 0.4s, transform 0.4s', opacity: kpiVisible ? 1 : 0, transform: kpiVisible ? 'translateY(0)' : 'translateY(6px)' }}>
-              {[
-                { label: '현재가', value: '86,300' },
-                { label: 'RSI(14)', value: '58.3' },
-                { label: 'Sharpe', value: '1.24' },
-                { label: 'MDD', value: '-12.4%' },
-              ].map(k => (
-                <div key={k.label} style={{ background: '#ffffff', border: '1px solid #eeeeee', borderRadius: '0.35rem', padding: '0.4rem 0.5rem' }}>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.55rem', color: '#bbbbbb', marginBottom: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k.label}</p>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.85rem', fontWeight: 600, color: '#0a0a0a' }}>{k.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* 차트 + 인사이트 */}
-            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 140px', gap: '0.375rem', minHeight: 0 }}>
-              <div style={{ background: '#ffffff', border: '1px solid #eeeeee', borderRadius: '0.35rem', padding: '0.5rem 0.375rem 0.25rem', transition: 'opacity 0.5s', opacity: visibleData > 0 ? 1 : 0 }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.55rem', color: '#cccccc', marginBottom: '0.35rem', paddingLeft: '0.25rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Close Price</p>
-                <ResponsiveContainer width="100%" height="88%">
-                  <AreaChart data={MINI_PRICES.slice(0, visibleData)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0a0a0a" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#0a0a0a" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="d" tick={{ fontSize: 8, fill: '#cccccc' }} axisLine={false} tickLine={false} interval={5} />
-                    <YAxis domain={['auto','auto']} tick={{ fontSize: 8, fill: '#cccccc' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v: number) => (v/1000).toFixed(0)+'k'} />
-                    <Area type="monotone" dataKey="p" stroke="#0a0a0a" strokeWidth={1.5} fill="url(#heroGrad)" dot={false} animationDuration={700} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{ background: '#ffffff', border: '1px solid #eeeeee', borderRadius: '0.35rem', padding: '0.625rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', transition: 'opacity 0.5s, transform 0.5s', opacity: insightVisible ? 1 : 0, transform: insightVisible ? 'translateX(0)' : 'translateX(6px)' }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.55rem', color: '#cccccc', textTransform: 'uppercase', letterSpacing: '0.08em' }}>AI Insight</p>
-                <div style={{ width: '1.25rem', height: '1px', background: '#eeeeee' }} />
-                <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.65rem', color: '#555555', lineHeight: 1.7 }}>
-                  RSI 58.3 중립 구간. 52주 고점 대비 5.4% 하단 저항.
-                </p>
-                <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 300, fontSize: '0.65rem', color: '#aaaaaa', lineHeight: 1.7, marginTop: 'auto' }}>
-                  Sharpe 1.24 — 시장 대비 우수한 위험 조정 수익률.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* 페이즈 인디케이터 */}
-          <div style={{ position: 'absolute', bottom: '0.625rem', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '0.3rem' }}>
-            {[0,1,2,3].map(i => (
-              <div key={i} style={{ width: i === phase ? 14 : 5, height: 3, borderRadius: '2px', background: i === phase ? '#0a0a0a' : '#dddddd', transition: 'all 0.3s ease' }} />
-            ))}
-          </div>
+        <div style={{ width: '160px', height: '2px', background: P.border, margin: '0 auto', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: P.accent, width: '60%', borderRadius: '2px' }} />
         </div>
       </div>
     </div>
   )
-}
 
-// ─── Landing Page ─────────────────────────────────────────────────────────────
+  if (appState === 'dashboard' && payload) return <DashboardShell data={payload} onReset={handleReset} />
 
-interface LandingProps {
-  onFile: (file: File) => void
-  onDemo: (type: 'stock' | 'portfolio' | 'returns') => void
-  parseError: string | null
-}
-
-function LandingPage({ onFile, onDemo, parseError }: LandingProps) {
-  const heroRef = useRef<HTMLDivElement>(null)
-
-  const scrollToDemo = () => {
-    document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-    return (
-    <div style={{
-      background: '#ffffff',
-      backgroundImage: 'radial-gradient(circle, #e0e0e0 1px, transparent 1px)',
-      backgroundSize: '28px 28px',
-      color: '#0a0a0a',
-    }}>
-
-      {/* ── Hero: 좌측 카피 + 우측 하단 데모 ── */}
-      <div
-        ref={heroRef}
-        style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}
-      >
-
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Navbar onTryNow={scrollToDemo} />
-
-          {/* split layout */}
-          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', maxWidth: '72rem', margin: '0 auto', width: '100%', padding: '0 2rem', alignItems: 'center' }}>
-
-            {/* 왼쪽: 카피 */}
-            <div style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
-              {/* 뱃지 */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 1rem', borderRadius: '9999px', background: '#f0f0f0', border: '1px solid #e0e0e0', marginBottom: '2rem' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#0a0a0a', opacity: 0.35, display: 'inline-block' }} />
-                <span style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: '0.7rem', fontWeight: 400, color: '#888888', letterSpacing: '0.05em' }}>
-                  월간 해커톤 · Skills 기반 대시보드
-                </span>
-              </div>
-
-              {/* 헤드라인 */}
-              <h1 style={{ fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 900, fontSize: 'clamp(2rem, 4.5vw, 3.5rem)', lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0a0a0a', margin: '0 0 1.25rem', wordBreak: 'keep-all' }}>
-                Skills.md가<br />
-                대시보드를<br />
-                설계합니다.
-              </h1>
-
-              {/* 서브 카피 */}
-              <p style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: '1rem', fontWeight: 300, lineHeight: 1.85, color: '#666666', maxWidth: '22rem', margin: '0 0 2.5rem', wordBreak: 'keep-all' }}>
-                5개의 규칙 파일이 스키마 감지, 차트 선택,
-                AI 인사이트 생성을 전부 결정합니다.
-              </p>
-
-              {/* CTA */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <button
-                  onClick={scrollToDemo}
-                  style={{ background: '#0a0a0a', color: '#ffffff', fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 700, fontSize: '0.9rem', padding: '0.875rem 2rem', borderRadius: '9999px', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', transition: 'transform 0.15s ease, box-shadow 0.2s ease' }}
-                  onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.transform = 'translateY(-2px)'; el.style.boxShadow = '0 12px 32px rgba(0,0,0,0.18)' }}
-                  onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.transform = 'translateY(0)'; el.style.boxShadow = 'none' }}
-                >
-                  데모 체험하기
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-                    <path d="M1.5 6.5h10M8 2.5l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
-                <button
-                  onClick={() => document.getElementById('skills')?.scrollIntoView({ behavior: 'smooth' })}
-                  style={{ background: 'transparent', color: '#666666', fontFamily: "'Noto Sans KR', sans-serif", fontWeight: 400, fontSize: '0.9rem', padding: '0.875rem 1.75rem', borderRadius: '9999px', border: '1px solid #dddddd', cursor: 'pointer', transition: 'color 0.15s ease, border-color 0.15s ease' }}
-                  onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = '#0a0a0a'; el.style.borderColor = '#999999' }}
-                  onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = '#666666'; el.style.borderColor = '#dddddd' }}
-                >
-                  아키텍처 보기
-                </button>
-              </div>
-            </div>
-
-            {/* 오른쪽 하단: 인라인 데모 애니메이션 */}
-            <HeroDemoPreview />
-          </div>
-        </div>
-      </div>
-
-      {/* ── 섹션들 ── */}
-      <HowItWorksSection />
-      <ChartsSection />
-      <SkillsSection />
-      <DemoSection onDemo={onDemo} onFile={onFile} />
-
+  return (
+    <div className="dashboard" style={{ background: P.bg }}>
+      <TickerBar />
+      <Navbar onUpload={scrollToUpload} />
+      <HeroSection onScrollToDemo={scrollToDemo} />
+      <LiveChartsSection />
+      <HowSection />
+      <ArchSection />
+      <section ref={uploadRef} style={{ display: 'contents' }}>
+        <DemoSection onDemo={loadDemo} onFile={handleFile} />
+      </section>
       {parseError && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#111111] border border-[#333333] px-5 py-3 text-sm text-[#888888] z-50">
+        <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: P.neg, color: '#fff', padding: '10px 24px', fontFamily: MONO, fontSize: '0.6rem', zIndex: 999, borderRadius: '6px' }}>
           {parseError}
         </div>
       )}
-
-      <footer className="border-t border-[#d8d8d8] px-8 py-6 flex items-center justify-between">
-        <span className="text-xs text-[#0a0a0a] font-semibold tracking-widest uppercase">InvestDash</span>
-        <p className="text-xs text-[#999999]">모든 분석은 과거 데이터 기반이며 투자 권유가 아닙니다.</p>
+      <footer style={{ background: P.bg, borderTop: `1px solid ${P.border}` }}>
+        <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '24px 56px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '22px', height: '22px', background: P.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.48rem', fontFamily: MONO, fontWeight: 700, color: '#fff', borderRadius: '4px' }}>ID</div>
+            <span style={{ fontFamily: MONO, fontSize: '0.68rem', color: P.fg, fontWeight: 700, letterSpacing: '0.16em' }}>INVESTDASH</span>
+          </div>
+          <span style={{ fontFamily: SANS, fontWeight: 300, fontSize: '0.78rem', color: P.fgSub }}>모든 분석은 과거 데이터 기반이며 투자 권유가 아닙니다.</span>
+        </div>
       </footer>
-
     </div>
   )
 }

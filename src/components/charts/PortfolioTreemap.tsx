@@ -13,11 +13,11 @@ interface TPayloadItem { payload: TreemapNode }
 interface TProps { active?: boolean; payload?: TPayloadItem[] }
 
 function getColor(r: number): string {
-  if (r > 15) return '#ffffff'
-  if (r > 5)  return '#cccccc'
-  if (r > 0)  return '#999999'
-  if (r > -5) return '#555555'
-  return '#2a2a2a'
+  if (r > 15) return '#1A6B3A'
+  if (r > 5)  return '#2D9E57'
+  if (r > 0)  return '#8DC4A0'
+  if (r > -5) return '#CCCCCC'
+  return '#B83040'
 }
 
 function Tip({ active, payload }: TProps) {
@@ -26,10 +26,10 @@ function Tip({ active, payload }: TProps) {
   if (!node) return null
   const ret = Number(node.returnRate)
   return (
-    <div className="bg-[#111111] border border-[#222222] px-3 py-2 text-xs">
-      <p className="text-white font-medium">{node.name}</p>
-      <p className="text-[#888888]">비중 {Number(node.size).toFixed(1)}%</p>
-      <p className="text-[#888888]">수익률 {ret >= 0 ? '+' : ''}{ret.toFixed(1)}%</p>
+    <div style={{ background: '#fff', border: '1px solid #DDD9CE', padding: '8px 12px', fontSize: '0.75rem' }}>
+      <p style={{ color: '#1A1A1A', fontWeight: 500 }}>{node.name}</p>
+      <p style={{ color: '#5C5C57' }}>비중 {Number(node.size).toFixed(1)}%</p>
+      <p style={{ color: ret >= 0 ? '#0A7A45' : '#C42B35' }}>수익률 {ret >= 0 ? '+' : ''}{ret.toFixed(1)}%</p>
     </div>
   )
 }
@@ -39,17 +39,21 @@ interface ContentProps {
   name?: string; returnRate?: number; size?: number; color?: string
 }
 
-function Content({ x = 0, y = 0, width = 0, height = 0, name = '', returnRate = 0, size = 0, color = '#333333' }: ContentProps) {
+function Content({ x = 0, y = 0, width = 0, height = 0, name = '', returnRate = 0, size = 0 }: ContentProps) {
   if (width < 20 || height < 16) return null
+  const ret = Number(returnRate)
+  const fill = getColor(ret)
+  const textColor = (ret > 5 || ret < -5) ? '#ffffff' : '#1A1A1A'
+  const subColor = (ret > 5 || ret < -5) ? 'rgba(255,255,255,0.7)' : 'rgba(26,26,26,0.55)'
   const fs = Math.min(12, width / 6)
   const sub = Math.min(10, width / 7)
   return (
     <g>
-      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 2} fill={color} />
+      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 2} fill={fill} />
       {width > 40 && height > 28 && (
         <>
-          <text x={x + width / 2} y={y + height / 2 - 6} textAnchor="middle" fill={Number(returnRate) > 5 ? '#000000' : '#ffffff'} fontSize={fs} fontWeight="600">{name}</text>
-          <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill={Number(returnRate) > 5 ? '#33333399' : '#ffffff99'} fontSize={sub}>{Number(size).toFixed(1)}%</text>
+          <text x={x + width / 2} y={y + height / 2 - 6} textAnchor="middle" fill={textColor} fontSize={fs} fontWeight="600">{name}</text>
+          <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill={subColor} fontSize={sub}>{Number(size).toFixed(1)}%</text>
         </>
       )}
     </g>
@@ -67,12 +71,12 @@ export function PortfolioTreemap({ data, height = 300 }: Props) {
   }))
 
   return (
-    <div className="bg-[#0a0a0a] border border-[#222222] overflow-hidden">
-      <div className="px-4 py-2 border-b border-[#1e1e1e]">
-        <span className="text-xs text-[#888888] uppercase tracking-wider">포트폴리오 구성</span>
-        <span className="ml-3 text-xs text-[#444444]">크기=비중 · 밝기=수익률</span>
+    <div style={{ background: '#FAFAF9', border: '1px solid #DDD9CE', overflow: 'hidden' }}>
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid #DDD9CE' }}>
+        <span style={{ fontSize: '0.75rem', color: '#5C5C57', textTransform: 'uppercase', letterSpacing: '0.05em' }}>포트폴리오 구성</span>
+        <span style={{ marginLeft: '12px', fontSize: '0.625rem', color: '#5C5C57' }}>크기=비중 · 색상=수익률</span>
       </div>
-      <div className="p-2">
+      <div style={{ padding: '8px' }}>
         <ResponsiveContainer width="100%" height={height}>
           <Treemap data={treeData} dataKey="size" content={<Content />}>
             <Tooltip content={<Tip />} />

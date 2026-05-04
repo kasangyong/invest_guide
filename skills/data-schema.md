@@ -1,4 +1,4 @@
-# Data Schema Detection Rules v1.0
+# Data Schema Detection Rules
 
 ## 목적
 업로드된 CSV/JSON 데이터의 컬럼을 분석하여 데이터 타입을 자동 분류한다.

@@ -10,13 +10,12 @@ interface Props {
 }
 
 function resolveColor(colorType: ColorType | undefined, value: string): string {
-  if (!colorType || colorType === 'neutral') return 'text-white'
-  if (colorType === 'positive') return 'text-[#26a69a]'
-  if (colorType === 'negative') return 'text-[#ef5350]'
-  // auto: detect from value string sign
-  if (value.startsWith('+')) return 'text-[#26a69a]'
-  if (value.startsWith('-')) return 'text-[#ef5350]'
-  return 'text-white'
+  if (!colorType || colorType === 'neutral') return 'var(--c-fg)'
+  if (colorType === 'positive') return '#0A7A45'
+  if (colorType === 'negative') return '#C42B35'
+  if (value.startsWith('+')) return '#0A7A45'
+  if (value.startsWith('-')) return '#C42B35'
+  return 'var(--c-fg)'
 }
 
 export function KPICard({ label, value, change, unit, tooltip, colorType }: Props) {
@@ -25,15 +24,27 @@ export function KPICard({ label, value, change, unit, tooltip, colorType }: Prop
   return (
     <div
       title={tooltip}
-      className="flex flex-col justify-between bg-[#111111] border border-[#222222] px-4 py-3 min-w-[130px] cursor-default"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        background: 'var(--c-bg-muted)',
+        borderRight: '1px solid var(--c-line)',
+        padding: 'var(--s-4)',
+        minWidth: '120px',
+        cursor: 'default',
+        flexShrink: 0,
+      }}
     >
-      <p className="text-xs text-[#888888] uppercase tracking-wider mb-2">{label}</p>
-      <p className={`text-xl font-semibold leading-tight ${valueColor}`}>
+      <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.65rem', color: 'var(--c-fg-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--s-3)' }}>
+        {label}
+      </p>
+      <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--t-2)', fontWeight: 500, lineHeight: 1.1, color: valueColor }}>
         {value}
-        {unit && <span className="text-sm text-[#888888] ml-1 font-normal">{unit}</span>}
+        {unit && <span style={{ fontSize: 'var(--t--1)', color: 'var(--c-fg-muted)', marginLeft: '4px', fontWeight: 400 }}>{unit}</span>}
       </p>
       {change != null && (
-        <p className={`text-xs mt-1 ${change >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+        <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.65rem', marginTop: 'var(--s-2)', color: change >= 0 ? '#0A7A45' : '#C42B35' }}>
           {change >= 0 ? '+' : ''}{change.toFixed(2)}%
         </p>
       )}
